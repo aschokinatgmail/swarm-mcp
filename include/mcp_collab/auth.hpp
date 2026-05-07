@@ -159,6 +159,17 @@ public:
     std::optional<AuthToken> refresh_token(const std::string& token_str,
                                            std::chrono::seconds ttl = std::chrono::hours(24));
 
+    // Static signing utilities (used by issue_token and secure_mqtt)
+    static std::string sign(const std::string& payload, const std::string& secret) {
+        return compute_hmac(payload, secret);
+    }
+
+    static bool verify_sig(const std::string& payload, const std::string& signature, const std::string& secret) {
+        auto expected = compute_hmac(payload, secret);
+        if (expected.size() != signature.size()) return false;
+        return std::equal(expected.begin(), expected.end(), signature.begin());
+    }
+
 private:
     std::string swarm_secret_;
     mutable std::shared_mutex tokens_mutex_;

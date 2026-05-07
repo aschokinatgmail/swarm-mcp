@@ -76,7 +76,8 @@ public:
     bool set_status(const std::string& id, TaskStatus status);
     bool add_dependency(const std::string& id, const std::string& dep_id);
     bool remove_dependency(const std::string& id, const std::string& dep_id);
-    bool add_tag(const std::string& id, const std::string& tag);
+    bool has_dependency(const std::string& id, const std::string& dep_id) const;
+    bool would_create_cycle(const std::string& id, const std::string& dep_id) const;
 
     std::vector<Task> list_tasks(const TaskFilter& filter = {}) const;
     std::vector<Task> get_ready_tasks() const;

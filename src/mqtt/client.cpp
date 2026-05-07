@@ -5,6 +5,7 @@
 #include <spdlog/spdlog.h>
 #include <cstring>
 #include <algorithm>
+#include <sstream>
 
 namespace mcp_collab {
 
@@ -226,26 +227,43 @@ void MqttClient::on_subscribe_failure(void* context, MQTTAsync_failureData* resp
 void MqttClient::handle_message(const std::string& topic, const std::string& payload) {
     std::shared_lock lock(topics_mutex_);
 
-    for (const auto& [pattern, cb] : callbacks_) {
-        if (pattern == topic || pattern == "#") {
-            MqttMessage msg{.topic = topic, .payload = payload};
-            cb(msg);
-            return;
-        }
+    auto mqtt_match = [](const std::string& pattern, const std::string& t) -> bool {
+        if (pattern == t || pattern == "#") return true;
 
-        if (pattern.ends_with("/#") && topic.starts_with(pattern.substr(0, pattern.size() - 2))) {
-            MqttMessage msg{.topic = topic, .payload = payload};
-            cb(msg);
-            return;
-        }
+        // Split both by '/'
+        auto split = [](const std::string& s) -> std::vector<std::string> {
+            std::vector<std::string> parts;
+            std::istringstream iss(s);
+            std::string part;
+            while (std::getline(iss, part, '/')) parts.push_back(part);
+            return parts;
+        };
 
-        if (pattern.ends_with("/+") && topic.starts_with(pattern.substr(0, pattern.size() - 2))) {
-            auto remainder = topic.substr(pattern.size() - 1);
-            if (remainder.find('/') == std::string::npos) {
-                MqttMessage msg{.topic = topic, .payload = payload};
-                cb(msg);
-                return;
+        auto pat_parts = split(pattern);
+        auto top_parts = split(t);
+
+        size_t pi = 0, ti = 0;
+        while (pi < pat_parts.size() && ti < top_parts.size()) {
+            if (pat_parts[pi] == "#") return true; // # matches rest
+            if (pat_parts[pi] == "+") {            // + matches one level
+                pi++; ti++;
+                continue;
             }
+            if (pat_parts[pi] != top_parts[ti]) return false;
+            pi++; ti++;
+        }
+
+        if (pi == pat_parts.size() && ti == top_parts.size()) return true;
+        // Allow trailing /# to match end
+        if (pi < pat_parts.size() && pat_parts[pi] == "#" && ti == top_parts.size()) return true;
+        return false;
+    };
+
+    for (const auto& [pattern, cb] : callbacks_) {
+        if (mqtt_match(pattern, topic)) {
+            MqttMessage msg{.topic = topic, .payload = payload};
+            cb(msg);
+            return;
         }
     }
 

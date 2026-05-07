@@ -95,18 +95,34 @@ int main(int argc, char* argv[]) {
     auto file_config = mcp_collab::ServerConfig::from_file(config_path);
     auto env_config = mcp_collab::ServerConfig::from_env();
 
-    config.server_name = env_config.server_name.empty() ? file_config.server_name : env_config.server_name;
-    if (file_config.server_name != "swarm-mcp" && config.server_name == "swarm-mcp")
-        config.server_name = file_config.server_name;
-    config.swarm.id = config.swarm.id.empty() ? (env_config.swarm.id.empty() ? file_config.swarm.id : env_config.swarm.id) : config.swarm.id;
-    config.swarm.secret = config.swarm.secret.empty() ? (env_config.swarm.secret.empty() ? file_config.swarm.secret : env_config.swarm.secret) : config.swarm.secret;
-    config.mqtt.host = env_config.mqtt.host != "localhost" ? env_config.mqtt.host : file_config.mqtt.host;
-    config.mqtt.port = env_config.mqtt.port != 1883 ? env_config.mqtt.port : file_config.mqtt.port;
-    config.http.host = env_config.http.host != "0.0.0.0" ? env_config.http.host : file_config.http.host;
-    config.http.port = env_config.http.port != 3001 ? env_config.http.port : file_config.http.port;
-    config.http.endpoint = env_config.http.endpoint != "/mcp" ? env_config.http.endpoint : file_config.http.endpoint;
-    config.git.repo_path = config.git.repo_path.empty() ? (env_config.git.repo_path.empty() ? file_config.git.repo_path : env_config.git.repo_path) : config.git.repo_path;
-    config.git.branch_prefix = file_config.git.branch_prefix;
+    // Config precedence: CLI args > env vars > config file > defaults.
+    // For each value, pick the first non-empty source.
+    auto pick_str = [](const auto& cli, const auto& env, const auto& file, const auto& def) {
+        if (!cli.empty()) return cli;
+        if (!env.empty()) return env;
+        if (!file.empty()) return file;
+        return def;
+    };
+    auto pick_uint = [](uint16_t cli_val, uint16_t cli_default, uint16_t env_val, uint16_t file_val, uint16_t builtin_default) {
+        // If CLI was explicitly set (different from default), use it
+        if (cli_val != cli_default) return cli_val;
+        // Otherwise env > file
+        return env_val ? env_val : (file_val ? file_val : builtin_default);
+    };
+
+    config.server_name = pick_str(config.server_name, env_config.server_name, file_config.server_name, "swarm-mcp");
+    config.swarm.id = pick_str(config.swarm.id, env_config.swarm.id, file_config.swarm.id, "");
+    config.swarm.secret = pick_str(config.swarm.secret, env_config.swarm.secret, file_config.swarm.secret, "");
+    config.mqtt.host = pick_str(config.mqtt.host, env_config.mqtt.host, file_config.mqtt.host, "localhost");
+    config.mqtt.port = pick_uint(config.http.port, 3001, env_config.mqtt.port, file_config.mqtt.port, 1883);
+    config.http.host = pick_str(config.http.host, env_config.http.host, file_config.http.host, "0.0.0.0");
+    config.http.port = pick_uint(config.http.port, 3001, env_config.http.port, file_config.http.port, 3001);
+    config.http.endpoint = pick_str(config.http.endpoint, env_config.http.endpoint, file_config.http.endpoint, "/mcp");
+    config.git.repo_path = pick_str(config.git.repo_path, env_config.git.repo_path, file_config.git.repo_path, "");
+    config.git.branch_prefix = pick_str(config.git.branch_prefix, "", file_config.git.branch_prefix, "collab/");
+    config.http.require_auth = env_config.http.require_auth ? env_config.http.require_auth : file_config.http.require_auth;
+    config.swarm.token_ttl = env_config.swarm.token_ttl.count() > 0 ? env_config.swarm.token_ttl : file_config.swarm.token_ttl;
+    config.swarm.heartbeat_timeout = env_config.swarm.heartbeat_timeout.count() > 0 ? env_config.swarm.heartbeat_timeout : file_config.swarm.heartbeat_timeout;
 
     // Enrollment mode — issue a token and exit
     if (!enroll_agent.empty()) {

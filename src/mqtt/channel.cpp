@@ -35,14 +35,15 @@ bool Channel::publish(const json& data, const AuthToken& token) {
 }
 
 bool Channel::publish_unsigned(const json& data) {
-    // Fallback for internal server messages where no token is available
-    // Uses a synthetic coordinator token
-    static AuthToken internal_token;
-    internal_token.token_id = "swarm-mcp-internal";
-    internal_token.agent_id = "swarm-mcp-server";
-    internal_token.role = Role::Coordinator;
-    internal_token.swarm_id = "internal";
-    internal_token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
+    thread_local AuthToken internal_token = [] {
+        AuthToken t;
+        t.token_id = "swarm-mcp-internal";
+        t.agent_id = "swarm-mcp-server";
+        t.role = Role::Coordinator;
+        t.swarm_id = "internal";
+        t.expires_at = std::chrono::system_clock::now() + std::chrono::hours(87600);
+        return t;
+    }();
     return mqtt_.publish_signed(full_topic_, data, internal_token, spec_.qos, spec_.retained);
 }
 

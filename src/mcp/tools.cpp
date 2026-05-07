@@ -160,12 +160,18 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         },
         .required_permission = Permission::AgentRegister,
     }, [&](const json& args) -> json {
+        auto token = auth_from_args(args);
         AgentInfo info;
         info.name = args.value("name", "");
         info.platform = args.value("platform", "");
         info.capabilities = args.value("capabilities", std::vector<std::string>{});
         info.metadata = args.value("metadata", json::object());
-        return {{"info", info.to_json()}, {"note", "Token-issued registration required – use /auth endpoint"}};
+        auto id = agents.register_agent(info, token);
+        if (id.empty()) {
+            return {{"success", false}, {"error", "Registration denied — swarm mismatch or auth failure"}};
+        }
+        auto registered = agents.get_agent(id);
+        return registered ? registered->to_json() : json{{"error", "Registration failed"}};
     });
 
     proto.register_tool({
@@ -225,7 +231,15 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         },
         .required_permission = Permission::AgentManage,
     }, [&](const json& args) -> json {
-        return {{"success", false}, {"error", "Role changes require Coordinator token – use AuthProvider directly"}};
+        auto token = auth_from_args(args);
+        auto agent_id = args.value("agent_id", "");
+        auto new_role_str = args.value("role", "observer");
+        Role new_role = role_from_str(new_role_str);
+        if (agents.set_agent_role(agent_id, new_role, token)) {
+            auto agent = agents.get_agent(agent_id);
+            return agent ? agent->to_json() : json{{"success", true}};
+        }
+        return {{"success", false}, {"error", "Role change denied — requires Coordinator role"}};
     });
 
     // ── Context tools ────────────────────────────────────────────────

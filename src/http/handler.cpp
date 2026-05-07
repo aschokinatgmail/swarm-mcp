@@ -87,13 +87,15 @@ void StreamableHttpTransport::setup_routes() {
 
 std::optional<AuthToken> StreamableHttpTransport::authenticate(const httplib::Request& req) const {
     if (!config_.require_auth) {
-        // Return a synthetic token for anonymous access (observer role)
-        static AuthToken anon;
-        anon.token_id = "anonymous";
-        anon.agent_id = "anonymous";
-        anon.role = Role::Observer;
-        anon.swarm_id = "";
-        anon.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
+        thread_local AuthToken anon = [] {
+            AuthToken t;
+            t.token_id = "anonymous";
+            t.agent_id = "anonymous";
+            t.role = Role::Observer;
+            t.swarm_id = "";
+            t.expires_at = std::chrono::system_clock::now() + std::chrono::hours(87600);
+            return t;
+        }();
         return anon;
     }
 
@@ -162,7 +164,7 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
             } else {
                 body["params"] = auth_context;
             }
-            response_str = protocol_.handle_raw(req.body.empty() ? "{}" : body.dump());
+            response_str = protocol_.handle_raw(body.dump());
         }
     } catch (const json::parse_error& e) {
         json err = {

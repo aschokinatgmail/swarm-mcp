@@ -145,10 +145,15 @@ bool MqttTopicAuth::can_publish(Role role, const std::string& topic) const {
 }
 
 bool MqttTopicAuth::can_subscribe(Role role, const std::string& topic) const {
-    (void)role;
+    // Coordinators can always subscribe
+    if (role == Role::Coordinator) return true;
 
     for (const auto& rule : rules_) {
         if (topic.starts_with(rule.topic_prefix) || topic == rule.topic_prefix) {
+            // If subscribe_roles is set, check it; otherwise allow all
+            if (!rule.subscribe_roles.empty()) {
+                return rule.subscribe_roles.contains(role);
+            }
             return rule.allow_subscribe;
         }
     }

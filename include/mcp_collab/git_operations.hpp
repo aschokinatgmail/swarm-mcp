@@ -41,6 +41,7 @@ public:
     bool add(const std::string& pathspec = ".") const;
     bool checkout(const std::string& branch, bool create = false) const;
     bool merge(const std::string& branch, bool no_ff = false) const;
+    bool merge_squash(const std::string& branch) const;
     bool rebase(const std::string& branch) const;
     bool branch_delete(const std::string& branch, bool force = false) const;
     bool stash() const;
@@ -55,6 +56,7 @@ public:
 
 private:
     std::string repo_path_;
+    mutable std::mutex exec_mutex_;  // Serialize git commands to prevent working tree corruption
 };
 
 }

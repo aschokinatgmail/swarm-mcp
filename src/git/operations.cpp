@@ -16,8 +16,33 @@ GitOperations::GitOperations(const std::string& repo_path)
     : repo_path_(repo_path) {}
 
 GitResult GitOperations::exec(const std::string& args) const {
+    std::lock_guard lock(exec_mutex_);  // Serialize all git operations
     GitResult result;
     std::string cmd = std::format("git -C \"{}\" {}", repo_path_, args);
+
+    // Validate: reject shell metacharacters to prevent injection
+    static const std::string dangerous_chars = "&|;`$(){}<>!\n\r";
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (dangerous_chars.find(args[i]) != std::string::npos) {
+            // Allow $(...) only within double-quoted arguments (--format="...")
+            // Reject everything else
+            if (args[i] != '$') {
+                spdlog::error("Shell injection attempt rejected in git args: {}", args);
+                result.exit_code = -1;
+                return result;
+            }
+            // For $, check if it's inside a quoted string
+            int quote_count = 0;
+            for (size_t j = 0; j < i; ++j) {
+                if (args[j] == '"') quote_count++;
+            }
+            if (quote_count % 2 == 0) {
+                spdlog::error("Unquoted shell variable in git args: {}", args);
+                result.exit_code = -1;
+                return result;
+            }
+        }
+    }
 
 #ifdef _WIN32
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
@@ -126,6 +151,10 @@ bool GitOperations::checkout(const std::string& branch, bool create) const {
 bool GitOperations::merge(const std::string& branch, bool no_ff) const {
     std::string args = no_ff ? std::format("merge --no-ff {}", branch) : std::format("merge {}", branch);
     return exec(args).success;
+}
+
+bool GitOperations::merge_squash(const std::string& branch) const {
+    return exec(std::format("merge --squash {}", branch)).success;
 }
 
 bool GitOperations::rebase(const std::string& branch) const {

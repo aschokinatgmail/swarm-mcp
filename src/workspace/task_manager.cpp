@@ -182,6 +182,19 @@ bool TaskManager::add_dependency(const std::string& id, const std::string& dep_i
     std::unique_lock lock(mutex_);
     auto it = tasks_.find(id);
     if (it == tasks_.end()) return false;
+    if (tasks_.find(dep_id) == tasks_.end()) return false; // dependency must exist
+
+    // Self-dependency
+    if (id == dep_id) {
+        spdlog::warn("Cannot add self-dependency: task={} dep={}", id, dep_id);
+        return false;
+    }
+
+    // Circular dependency check
+    if (would_create_cycle(id, dep_id)) {
+        spdlog::warn("Circular dependency detected: task={} dep={}", id, dep_id);
+        return false;
+    }
 
     auto& deps = it->second.dependencies;
     if (std::ranges::find(deps, dep_id) == deps.end()) {
@@ -268,6 +281,37 @@ std::vector<Task> TaskManager::get_agent_tasks(const std::string& agent_id) cons
 
 void TaskManager::on_task_event(TaskCallback cb) {
     callback_ = std::move(cb);
+}
+
+bool TaskManager::has_dependency(const std::string& id, const std::string& dep_id) const {
+    std::shared_lock lock(mutex_);
+    auto it = tasks_.find(id);
+    if (it == tasks_.end()) return false;
+    const auto& deps = it->second.dependencies;
+    return std::ranges::find(deps, dep_id) != deps.end();
+}
+
+bool TaskManager::would_create_cycle(const std::string& id, const std::string& dep_id) const {
+    // DFS from dep_id: if we can reach id, adding dep_id→id creates a cycle
+    std::unordered_set<std::string> visited;
+    std::vector<std::string> stack;
+    stack.push_back(dep_id);
+
+    while (!stack.empty()) {
+        std::string current = stack.back();
+        stack.pop_back();
+
+        if (current == id) return true;
+        if (visited.contains(current)) continue;
+        visited.insert(current);
+
+        auto it = tasks_.find(current);
+        if (it == tasks_.end()) continue;
+        for (const auto& dep : it->second.dependencies) {
+            stack.push_back(dep);
+        }
+    }
+    return false;
 }
 
 void TaskManager::notify(const std::string& event, const Task& task) {

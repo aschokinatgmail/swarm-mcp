@@ -137,7 +137,8 @@ bool MergeCoordinator::perform_merge(const MergeRequest& req) {
             if (!git_.rebase(req.target_branch)) return false;
             return git_.checkout(req.target_branch) && git_.merge(req.source_branch);
         case MergeStrategy::Squash:
-            if (!git_.merge(req.source_branch)) return false;
+            if (!git_.merge_squash(req.source_branch)) return false;
+            if (!git_.add()) return false;
             return git_.commit(std::format("squash: merge {} into {}", req.source_branch, req.target_branch));
     }
     return false;
@@ -184,9 +185,8 @@ bool MergeCoordinator::auto_merge_completed_tasks() {
         std::string diff = branch_mgr_.diff_to_base(info.name);
         if (diff.empty()) continue;
 
-        auto req_id = request_merge(info.name, info.base_branch, "auto-merger", MergeStrategy::Squash);
-        approve_merge(req_id, "auto-merger");
-        if (execute_merge(req_id)) any = true;
+        request_merge(info.name, info.base_branch, "auto-merger", MergeStrategy::Squash);
+        any = true;  // Merge requests created but NOT auto-approved — requires human review
     }
     return any;
 }

@@ -59,9 +59,10 @@ struct MqttEnvelope {
 //   Observer: can only subscribe (no publish)
 
 struct MqttAclRule {
-    std::string topic_prefix;            // e.g. "mcp-collab/swarm1/tasks"
-    std::unordered_set<Role> allow_roles; // which roles can publish
-    bool allow_subscribe{true};          // all roles can subscribe by default
+    std::string topic_prefix;                          // e.g. "mcp-collab/swarm1/tasks"
+    std::unordered_set<Role> allow_roles;               // which roles can publish
+    std::unordered_set<Role> subscribe_roles;           // which roles can subscribe (empty = all)
+    bool allow_subscribe{true};                         // deprecated, use subscribe_roles
 };
 
 class MqttTopicAuth {

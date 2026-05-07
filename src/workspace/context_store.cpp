@@ -3,42 +3,29 @@
 
 namespace mcp_collab {
 
-json ContextEntry::to_json() const {
-    return {
-        {"key", key},
-        {"value", value},
-        {"owner", owner},
-        {"version", version},
-        {"updated_at", std::chrono::duration_cast<std::chrono::milliseconds>(
-            updated_at.time_since_epoch()).count()},
-    };
-}
-
-ContextEntry ContextEntry::from_json(const json& j) {
-    ContextEntry e;
-    e.key = j.value("key", "");
-    e.value = j.value("value", json::object());
-    e.owner = j.value("owner", "");
-    e.version = j.value("version", 1);
-    auto ts = j.value("updated_at", 0LL);
-    e.updated_at = std::chrono::system_clock::time_point{} + std::chrono::milliseconds(ts);
-    return e;
-}
-
 bool ContextStore::set(const std::string& key, const json& value, const std::string& owner) {
-    std::unique_lock lock(mutex_);
-    auto it = store_.find(key);
-    if (it != store_.end()) {
-        it->second.value = value;
-        it->second.owner = owner;
-        it->second.updated_at = std::chrono::system_clock::now();
-        it->second.version++;
-        notify(key, it->second, "updated");
-    } else {
-        ContextEntry entry{.key = key, .value = value, .owner = owner};
-        store_[key] = entry;
-        notify(key, store_[key], "created");
+    ContextEntry entry;
+    bool is_new;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = store_.find(key);
+        if (it != store_.end()) {
+            it->second.value = value;
+            it->second.owner = owner;
+            it->second.updated_at = std::chrono::system_clock::now();
+            it->second.version++;
+            entry = it->second;
+            is_new = false;
+        } else {
+            entry.key = key;
+            entry.value = value;
+            entry.owner = owner;
+            entry.updated_at = std::chrono::system_clock::now();
+            store_[key] = entry;
+            is_new = true;
+        }
     }
+    notify(key, entry, is_new ? "created" : "updated");
     return true;
 }
 
@@ -50,12 +37,14 @@ std::optional<ContextEntry> ContextStore::get(const std::string& key) const {
 }
 
 bool ContextStore::del(const std::string& key) {
-    std::unique_lock lock(mutex_);
-    auto it = store_.find(key);
-    if (it == store_.end()) return false;
-
-    ContextEntry entry = it->second;
-    store_.erase(it);
+    ContextEntry entry;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = store_.find(key);
+        if (it == store_.end()) return false;
+        entry = it->second;
+        store_.erase(it);
+    }
     notify(key, entry, "deleted");
     return true;
 }
@@ -66,45 +55,61 @@ bool ContextStore::exists(const std::string& key) const {
 }
 
 bool ContextStore::update_partial(const std::string& key, const json& patch, const std::string& owner) {
-    std::unique_lock lock(mutex_);
-    auto it = store_.find(key);
-    if (it == store_.end()) return false;
+    ContextEntry entry;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = store_.find(key);
+        if (it == store_.end()) return false;
 
-    if (patch.is_object() && it->second.value.is_object()) {
-        it->second.value.merge_patch(patch);
-    } else {
-        it->second.value = patch;
+        if (patch.is_object() && it->second.value.is_object()) {
+            it->second.value.merge_patch(patch);
+        } else {
+            it->second.value = patch;
+        }
+
+        it->second.owner = owner;
+        it->second.updated_at = std::chrono::system_clock::now();
+        it->second.version++;
+        entry = it->second;
     }
-
-    it->second.owner = owner;
-    it->second.updated_at = std::chrono::system_clock::now();
-    it->second.version++;
-    notify(key, it->second, "updated");
+    notify(key, entry, "updated");
     return true;
 }
 
 bool ContextStore::merge(const std::string& key, const json& data, const std::string& owner) {
-    std::unique_lock lock(mutex_);
-    auto it = store_.find(key);
-    if (it == store_.end()) {
-        return set(key, data, owner);
+    ContextEntry entry;
+    bool created;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = store_.find(key);
+        if (it == store_.end()) {
+            ContextEntry new_entry;
+            new_entry.key = key;
+            new_entry.value = data;
+            new_entry.owner = owner;
+            new_entry.updated_at = std::chrono::system_clock::now();
+            store_[key] = new_entry;
+            entry = new_entry;
+            created = true;
+        } else {
+            if (data.is_object() && it->second.value.is_object()) {
+                it->second.value.merge_patch(data);
+            } else if (data.is_array() && it->second.value.is_array()) {
+                auto arr = it->second.value.get<std::vector<json>>();
+                auto new_arr = data.get<std::vector<json>>();
+                arr.insert(arr.end(), new_arr.begin(), new_arr.end());
+                it->second.value = arr;
+            } else {
+                it->second.value = data;
+            }
+            it->second.owner = owner;
+            it->second.updated_at = std::chrono::system_clock::now();
+            it->second.version++;
+            entry = it->second;
+            created = false;
+        }
     }
-
-    if (data.is_object() && it->second.value.is_object()) {
-        it->second.value.merge_patch(data);
-    } else if (data.is_array() && it->second.value.is_array()) {
-        auto arr = it->second.value.get<std::vector<json>>();
-        auto new_arr = data.get<std::vector<json>>();
-        arr.insert(arr.end(), new_arr.begin(), new_arr.end());
-        it->second.value = arr;
-    } else {
-        it->second.value = data;
-    }
-
-    it->second.owner = owner;
-    it->second.updated_at = std::chrono::system_clock::now();
-    it->second.version++;
-    notify(key, it->second, "merged");
+    notify(key, entry, created ? "created" : "merged");
     return true;
 }
 
