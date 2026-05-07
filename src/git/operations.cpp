@@ -1,0 +1,204 @@
+#include "mcp_collab/git_operations.hpp"
+#include <spdlog/spdlog.h>
+#include <sstream>
+#include <algorithm>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <cstdio>
+#else
+#include <unistd.h>
+#endif
+
+namespace mcp_collab {
+
+GitOperations::GitOperations(const std::string& repo_path)
+    : repo_path_(repo_path) {}
+
+GitResult GitOperations::exec(const std::string& args) const {
+    GitResult result;
+    std::string cmd = std::format("git -C \"{}\" {}", repo_path_, args);
+
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    HANDLE h_out_read, h_out_write, h_err_read, h_err_write;
+    CreatePipe(&h_out_read, &h_out_write, &sa, 0);
+    CreatePipe(&h_err_read, &h_err_write, &sa, 0);
+    SetHandleInformation(h_out_read, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(h_err_read, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {sizeof(STARTUPINFOA)};
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = h_out_write;
+    si.hStdError = h_err_write;
+    PROCESS_INFORMATION pi{};
+
+    char buf[4096];
+    snprintf(buf, sizeof(buf), "cmd /c %s", cmd.c_str());
+    CreateProcessA(nullptr, buf, nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
+
+    CloseHandle(h_out_write);
+    CloseHandle(h_err_write);
+
+    char read_buf[4096];
+    DWORD bytes_read;
+    while (ReadFile(h_out_read, read_buf, sizeof(read_buf) - 1, &bytes_read, nullptr) && bytes_read > 0) {
+        result.stdout_out.append(read_buf, bytes_read);
+    }
+    while (ReadFile(h_err_read, read_buf, sizeof(read_buf) - 1, &bytes_read, nullptr) && bytes_read > 0) {
+        result.stderr_out.append(read_buf, bytes_read);
+    }
+
+    WaitForSingleObject(pi.hProcess, 30000);
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    result.exit_code = static_cast<int>(exit_code);
+    result.success = (exit_code == 0);
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    CloseHandle(h_out_read);
+    CloseHandle(h_err_read);
+#else
+    FILE* pipe = popen((cmd + " 2>&1").c_str(), "r");
+    if (!pipe) {
+        result.success = false;
+        return result;
+    }
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        result.stdout_out += buffer;
+    }
+    int status = pclose(pipe);
+    result.exit_code = WEXITSTATUS(status);
+    result.success = (result.exit_code == 0);
+#endif
+
+    spdlog::debug("git {}: exit={} out_len={}", args, result.exit_code, result.stdout_out.size());
+    return result;
+}
+
+bool GitOperations::is_repo() const {
+    return exec("rev-parse --is-inside-work-tree").success;
+}
+
+std::string GitOperations::current_branch() const {
+    auto r = exec("rev-parse --abbrev-ref HEAD");
+    if (!r.success) return "";
+    auto& s = r.stdout_out;
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    return s;
+}
+
+std::string GitOperations::current_commit() const {
+    auto r = exec("rev-parse HEAD");
+    if (!r.success) return "";
+    auto& s = r.stdout_out;
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    return s;
+}
+
+bool GitOperations::has_changes() const {
+    auto r = exec("status --porcelain");
+    return r.success && !r.stdout_out.empty();
+}
+
+bool GitOperations::init() const { return exec("init").success; }
+bool GitOperations::fetch() const { return exec("fetch --all").success; }
+bool GitOperations::pull() const { return exec("pull --rebase").success; }
+bool GitOperations::push() const { return exec("push").success; }
+
+bool GitOperations::commit(const std::string& message, const std::string& author) const {
+    std::string args = std::format("commit -m \"{}\"", message);
+    if (!author.empty()) args += std::format(" --author=\"{}\"", author);
+    return exec(args).success;
+}
+
+bool GitOperations::add(const std::string& pathspec) const {
+    return exec(std::format("add {}", pathspec)).success;
+}
+
+bool GitOperations::checkout(const std::string& branch, bool create) const {
+    std::string args = create ? std::format("checkout -b {}", branch) : std::format("checkout {}", branch);
+    return exec(args).success;
+}
+
+bool GitOperations::merge(const std::string& branch, bool no_ff) const {
+    std::string args = no_ff ? std::format("merge --no-ff {}", branch) : std::format("merge {}", branch);
+    return exec(args).success;
+}
+
+bool GitOperations::rebase(const std::string& branch) const {
+    return exec(std::format("rebase {}", branch)).success;
+}
+
+bool GitOperations::branch_delete(const std::string& branch, bool force) const {
+    std::string flag = force ? "-D" : "-d";
+    return exec(std::format("branch {} {}", flag, branch)).success;
+}
+
+bool GitOperations::stash() const { return exec("stash").success; }
+bool GitOperations::stash_pop() const { return exec("stash pop").success; }
+
+bool GitOperations::reset(const std::string& ref, bool hard) const {
+    std::string flag = hard ? "--hard" : "--soft";
+    return exec(std::format("reset {} {}", flag, ref)).success;
+}
+
+bool GitOperations::cherry_pick(const std::string& commit_hash) const {
+    return exec(std::format("cherry-pick {}", commit_hash)).success;
+}
+
+std::vector<std::string> GitOperations::log(int count, const std::string& format) const {
+    std::string fmt = format.empty() ? "--oneline" : std::format("--format={}", format);
+    auto r = exec(std::format("log {} -{}", fmt, count));
+    if (!r.success) return {};
+
+    std::vector<std::string> lines;
+    std::istringstream iss(r.stdout_out);
+    std::string line;
+    while (std::getline(iss, line)) {
+        while (!line.empty() && (line.back() == '\r')) line.pop_back();
+        if (!line.empty()) lines.push_back(line);
+    }
+    return lines;
+}
+
+std::vector<std::string> GitOperations::branches(bool remote) const {
+    std::string args = remote ? "branch -r" : "branch";
+    auto r = exec(args);
+    if (!r.success) return {};
+
+    std::vector<std::string> result;
+    std::istringstream iss(r.stdout_out);
+    std::string line;
+    while (std::getline(iss, line)) {
+        while (!line.empty() && (line.back() == '\r')) line.pop_back();
+        auto trimmed = line;
+        auto start = trimmed.find_first_not_of(" \t*");
+        if (start != std::string::npos) {
+            result.push_back(trimmed.substr(start));
+        }
+    }
+    return result;
+}
+
+std::string GitOperations::diff(const std::string& from_ref, const std::string& to_ref) const {
+    std::string args;
+    if (!from_ref.empty() && !to_ref.empty()) {
+        args = std::format("diff {}...{}", from_ref, to_ref);
+    } else if (!from_ref.empty()) {
+        args = std::format("diff {}", from_ref);
+    } else {
+        args = "diff";
+    }
+    auto r = exec(args);
+    return r.success ? r.stdout_out : "";
+}
+
+std::string GitOperations::show(const std::string& ref) const {
+    auto r = exec(std::format("show {}", ref));
+    return r.success ? r.stdout_out : "";
+}
+
+}

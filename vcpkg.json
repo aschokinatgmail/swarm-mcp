@@ -1,0 +1,16 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+    "name": "swarm-mcp",
+    "version": "1.0.0",
+    "description": "Swarm MCP — multi-agent collaboration server with MQTT pub/sub and Git coordination",
+    "dependencies": [
+        "fmt",
+        "nlohmann-json",
+        "paho-mqtt",
+        "cpp-httplib",
+        "spdlog",
+        "openssl"
+    ],
+    "overrides": [],
+    "builtin-baseline": ""
+}
