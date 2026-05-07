@@ -7,8 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
-find_package(paho-mqtt3a CONFIG REQUIRED)
-find_package(paho-mqtt3as CONFIG REQUIRED)
+find_package(paho-mqtt CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL CONFIG REQUIRED)
@@ -32,15 +31,14 @@ add_executable(swarm-mcp
     src/git/merge_coordinator.cpp
     src/http/handler.cpp
     src/util/auth.cpp
-    src/util/uuid.cpp
     src/util/config.cpp
 )
 
 target_link_libraries(swarm-mcp PRIVATE
     fmt::fmt
     nlohmann_json::nlohmann_json
-    paho-mqtt3a::paho-mqtt3a
-    paho-mqtt3as::paho-mqtt3as
+    paho-mqtt::paho-mqtt3a
+    paho-mqtt::paho-mqtt3as
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
@@ -99,15 +97,14 @@ add_library(swarm_mcp_lib STATIC
     src/git/merge_coordinator.cpp
     src/http/handler.cpp
     src/util/auth.cpp
-    src/util/uuid.cpp
     src/util/config.cpp
 )
 
 target_link_libraries(swarm_mcp_lib PUBLIC
     fmt::fmt
     nlohmann_json::nlohmann_json
-    paho-mqtt3a::paho-mqtt3a
-    paho-mqtt3as::paho-mqtt3as
+    paho-mqtt::paho-mqtt3a
+    paho-mqtt::paho-mqtt3as
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto

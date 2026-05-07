@@ -217,23 +217,28 @@ std::vector<AgentInfo> AgentRegistry::find_by_role(Role role) const {
 }
 
 size_t AgentRegistry::prune_stale(std::chrono::seconds timeout) {
-    std::unique_lock lock(mutex_);
-    auto now = std::chrono::system_clock::now();
+    std::vector<AgentInfo> pruned_agents;
     size_t pruned = 0;
 
-    for (auto it = agents_.begin(); it != agents_.end();) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.last_heartbeat);
-        if (elapsed > timeout) {
-            auto agent = it->second;
-            it = agents_.erase(it);
-            pruned++;
-            lock.unlock();
-            spdlog::info("Pruned stale agent: id={} name=\"{}\"", agent.id, agent.name);
-            if (callback_) callback_("agent.pruned", agent);
-            lock.lock();
-        } else {
-            ++it;
+    {
+        std::unique_lock lock(mutex_);
+        auto now = std::chrono::system_clock::now();
+
+        for (auto it = agents_.begin(); it != agents_.end();) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.last_heartbeat);
+            if (elapsed > timeout) {
+                pruned_agents.push_back(it->second);
+                it = agents_.erase(it);
+                pruned++;
+            } else {
+                ++it;
+            }
         }
+    }
+
+    for (const auto& agent : pruned_agents) {
+        spdlog::info("Pruned stale agent: id={} name=\"{}\"", agent.id, agent.name);
+        if (callback_) callback_("agent.pruned", agent);
     }
     return pruned;
 }

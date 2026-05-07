@@ -139,16 +139,21 @@ int main(int argc, char* argv[]) {
             "  Agent ID : {}\n"
             "  Role     : {}\n"
             "  Swarm    : {}\n"
-            "  Token    : {}.{}\n\n"
+            "  Token    : {}\n\n"
             "Use this token as: Authorization: Bearer <token>\n",
             enroll_agent, enroll_role, config.swarm.id.empty() ? "default" : config.swarm.id,
-            token.token_id, config.swarm.secret.empty() ? "" : "<signed>");
+            token.token_id);
         return 0;
     }
 
     if (config.swarm.secret.empty() && config.http.require_auth) {
-        spdlog::warn("WARNING: No swarm secret configured. Tokens will not be cryptographically signed.");
-        spdlog::warn("         Set --secret or SWARM_SECRET for production use.");
+        config.swarm.secret = mcp_collab::AuthProvider::generate_secret(32);
+        spdlog::warn("No swarm secret configured. Auto-generated a random secret for this session.");
+        spdlog::warn("  Set --secret or SWARM_SECRET for persistent authentication.");
+    }
+
+    if (!config.http.require_auth) {
+        spdlog::warn("Authentication is DISABLED — all agents can connect without tokens.");
     }
 
     spdlog::info("╔══════════════════════════════════════════╗");

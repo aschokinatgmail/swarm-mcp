@@ -79,7 +79,8 @@ bool MqttEnvelope::is_fresh(std::chrono::seconds max_age) const {
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     auto age_ms = now_ms - timestamp;
-    return age_ms >= 0 && age_ms < max_age.count() * 1000;
+    constexpr int64_t clock_skew_threshold_ms = 30000;
+    return age_ms >= -clock_skew_threshold_ms && age_ms < max_age.count() * 1000;
 }
 
 // ── MqttTopicAuth ────────────────────────────────────────────────────

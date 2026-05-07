@@ -3,6 +3,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
+#include <spdlog/spdlog.h>
 
 namespace mcp_collab {
 
@@ -65,7 +66,9 @@ ServerConfig ServerConfig::from_file(const std::string& path) {
         }
 
     } catch (const json::parse_error& e) {
-        return cfg;
+        spdlog::error("Failed to parse config file '{}': {}", path, e.what());
+    } catch (const json::type_error& e) {
+        spdlog::error("Type error in config file '{}': {}", path, e.what());
     }
 
     return cfg;
@@ -89,7 +92,10 @@ ServerConfig ServerConfig::from_env() {
     if (env_val) cfg.mqtt.host = env_val;
 
     env_val = std::getenv("SWARM_MQTT_PORT");
-    if (env_val) cfg.mqtt.port = static_cast<uint16_t>(std::stoi(env_val));
+    if (env_val) {
+        try { cfg.mqtt.port = static_cast<uint16_t>(std::stoi(env_val)); }
+        catch (const std::exception& e) { spdlog::warn("Invalid SWARM_MQTT_PORT='{}': {}", env_val, e.what()); }
+    }
 
     env_val = std::getenv("SWARM_MQTT_USERNAME");
     if (env_val) cfg.mqtt.username = env_val;
@@ -101,7 +107,10 @@ ServerConfig ServerConfig::from_env() {
     if (env_val) cfg.http.host = env_val;
 
     env_val = std::getenv("SWARM_HTTP_PORT");
-    if (env_val) cfg.http.port = static_cast<uint16_t>(std::stoi(env_val));
+    if (env_val) {
+        try { cfg.http.port = static_cast<uint16_t>(std::stoi(env_val)); }
+        catch (const std::exception& e) { spdlog::warn("Invalid SWARM_HTTP_PORT='{}': {}", env_val, e.what()); }
+    }
 
     env_val = std::getenv("SWARM_HTTP_ENDPOINT");
     if (env_val) cfg.http.endpoint = env_val;
@@ -113,10 +122,16 @@ ServerConfig ServerConfig::from_env() {
     if (env_val) cfg.git.repo_path = env_val;
 
     env_val = std::getenv("SWARM_TOKEN_TTL");
-    if (env_val) cfg.swarm.token_ttl = std::chrono::seconds(std::stoi(env_val));
+    if (env_val) {
+        try { cfg.swarm.token_ttl = std::chrono::seconds(std::stoi(env_val)); }
+        catch (const std::exception& e) { spdlog::warn("Invalid SWARM_TOKEN_TTL='{}': {}", env_val, e.what()); }
+    }
 
     env_val = std::getenv("SWARM_HEARTBEAT_TIMEOUT");
-    if (env_val) cfg.swarm.heartbeat_timeout = std::chrono::seconds(std::stoi(env_val));
+    if (env_val) {
+        try { cfg.swarm.heartbeat_timeout = std::chrono::seconds(std::stoi(env_val)); }
+        catch (const std::exception& e) { spdlog::warn("Invalid SWARM_HEARTBEAT_TIMEOUT='{}': {}", env_val, e.what()); }
+    }
 
     return cfg;
 }

@@ -110,8 +110,11 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         auto status = task_status_from_str(args.value("status", ""));
         if (tasks.set_status(task_id, status)) {
             auto task = tasks.get_task(task_id);
-            channels.broadcast_event("task.status_changed", task->to_json(), token);
-            if (status == TaskStatus::Completed) channels.broadcast_event("task.completed", task->to_json(), token);
+            if (status == TaskStatus::Completed) {
+                channels.broadcast_event("task.completed", task->to_json(), token);
+            } else {
+                channels.broadcast_event("task.status_changed", task->to_json(), token);
+            }
             return {{"success", true}, {"task", task->to_json()}};
         }
         return {{"success", false}, {"error", "Task not found"}};

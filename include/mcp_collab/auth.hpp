@@ -170,6 +170,14 @@ public:
         return std::equal(expected.begin(), expected.end(), signature.begin());
     }
 
+    static std::string generate_secret(size_t length = 32);
+
+    static bool verify_sig(const std::string& payload, const std::string& signature, const std::string& secret) {
+        auto expected = compute_hmac(payload, secret);
+        if (expected.size() != signature.size()) return false;
+        return std::equal(expected.begin(), expected.end(), signature.begin());
+    }
+
 private:
     std::string swarm_secret_;
     mutable std::shared_mutex tokens_mutex_;

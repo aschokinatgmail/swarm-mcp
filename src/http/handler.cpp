@@ -2,22 +2,16 @@
 #include "mcp_collab/uuid.hpp"
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <queue>
+#include <condition_variable>
+#include <atomic>
 
 namespace mcp_collab {
 
-SseStream::ClientId SseStream::add_client(httplib::Response& res) {
+SseStream::ClientId SseStream::add_client(SinkFn sink) {
     auto id = generate_uuid();
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [this, id](size_t, httplib::DataSink& sink) -> bool {
-            std::string init = std::format("event: connected\ndata: {{\"clientId\": \"{}\"}}\n\n", id);
-            sink.write(init.c_str(), init.size());
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            return true;
-        }
-    );
-
     std::lock_guard lock(mutex_);
+    clients_[id] = std::move(sink);
     return id;
 }
 
@@ -35,8 +29,12 @@ void SseStream::broadcast(const std::string& method, const json& params) {
     std::string data = std::format("event: message\ndata: {}\n\n", notification.dump());
 
     std::lock_guard lock(mutex_);
-    for (auto& [id, sender] : clients_) {
-        sender(data);
+    for (auto it = clients_.begin(); it != clients_.end();) {
+        if (!it->second(data)) {
+            it = clients_.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -80,6 +78,10 @@ void StreamableHttpTransport::setup_routes() {
 
     server_->Delete(config_.endpoint, [this](const httplib::Request& req, httplib::Response& res) {
         handle_delete(req, res);
+    });
+
+    server_->Get("/health", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(R"({"status":"ok"})", "application/json");
     });
 
     spdlog::info("HTTP routes configured: endpoint={} auth={}", config_.endpoint, config_.require_auth);
@@ -135,6 +137,7 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
     }
 
     std::string response_str;
+    bool is_notification = false;
     try {
         json body = json::parse(req.body);
 
@@ -158,6 +161,13 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
                 results.push_back(protocol_.handle_request(item));
             }
             response_str = results.dump();
+            is_notification = true;
+            for (const auto& item : body) {
+                if (item.contains("id") && !item["id"].is_null()) {
+                    is_notification = false;
+                    break;
+                }
+            }
         } else {
             if (body.contains("params") && body["params"].is_object()) {
                 body["params"].merge_patch(auth_context);
@@ -165,6 +175,7 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
                 body["params"] = auth_context;
             }
             response_str = protocol_.handle_raw(body.dump());
+            is_notification = !body.contains("id") || body["id"].is_null();
         }
     } catch (const json::parse_error& e) {
         json err = {
@@ -174,12 +185,6 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
         };
         response_str = err.dump();
     }
-
-    bool is_notification = false;
-    try {
-        json body = json::parse(req.body);
-        is_notification = !body.contains("id") || body["id"].is_null();
-    } catch (...) {}
 
     if (is_notification) {
         res.status = 202;
@@ -204,7 +209,54 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
         return;
     }
 
-    auto client_id = sse_.add_client(res);
+    auto client_id = generate_uuid();
+    auto queue = std::make_shared<std::queue<std::string>>();
+    auto queue_mutex = std::make_shared<std::mutex>();
+    auto queue_cv = std::make_shared<std::condition_variable>();
+    auto disconnected = std::make_shared<std::atomic<bool>>(false);
+
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [this, client_id, queue, queue_mutex, queue_cv, disconnected](size_t, httplib::DataSink& sink) -> bool {
+            std::string init = std::format("event: connected\ndata: {{\"clientId\": \"{}\"}}\n\n", client_id);
+            sink.write(init.c_str(), init.size());
+
+            while (!disconnected->load()) {
+                std::string msg;
+                {
+                    std::unique_lock lock(*queue_mutex);
+                    queue_cv->wait_for(lock, std::chrono::milliseconds(100), [&] {
+                        return !queue->empty() || disconnected->load();
+                    });
+                    if (disconnected->load() && queue->empty()) break;
+                    if (!queue->empty()) {
+                        msg = std::move(queue->front());
+                        queue->pop();
+                    }
+                }
+                if (!msg.empty()) {
+                    if (!sink.write(msg.c_str(), msg.size())) return false;
+                }
+            }
+            return true;
+        },
+        [this, client_id](bool success) {
+            disconnected->store(true);
+            queue_cv->notify_all();
+            sse_.remove_client(client_id);
+        });
+
+    auto sink_fn = [queue, queue_mutex, queue_cv, disconnected](const std::string& data) -> bool {
+        if (disconnected->load()) return false;
+        {
+            std::lock_guard lock(*queue_mutex);
+            queue->push(data);
+        }
+        queue_cv->notify_one();
+        return true;
+    };
+
+    sse_.add_client(std::move(sink_fn));
     spdlog::info("SSE client connected: {} agent={} role={}", client_id, token->agent_id, role_to_str(token->role));
 }
 
@@ -218,6 +270,7 @@ void StreamableHttpTransport::handle_delete(const httplib::Request& req, httplib
 
 void StreamableHttpTransport::send_sse_notification(const std::string& method, const json& params) {
     sse_.broadcast(method, params);
+    if (notification_handler_) notification_handler_(method, params);
 }
 
 void StreamableHttpTransport::start() {
@@ -250,7 +303,7 @@ bool StreamableHttpTransport::is_running() const {
 }
 
 void StreamableHttpTransport::set_notification_handler(std::function<void(const std::string&, const json&)> handler) {
-    (void)handler;
+    notification_handler_ = std::move(handler);
 }
 
 }

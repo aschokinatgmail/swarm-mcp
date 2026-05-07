@@ -20,7 +20,7 @@ struct StreamableHttpConfig {
     std::string host{"0.0.0.0"};
     uint16_t port{3001};
     std::string endpoint{"/mcp"};
-    std::string cors_origin{"*"};
+    std::string cors_origin{""};
     int thread_pool_size{4};
     bool require_auth{true};
 };
@@ -28,17 +28,18 @@ struct StreamableHttpConfig {
 class SseStream {
 public:
     using ClientId = std::string;
+    using SinkFn = std::function<bool(const std::string&)>;
 
     SseStream() = default;
 
-    ClientId add_client(httplib::Response& res);
+    ClientId add_client(SinkFn sink);
     void remove_client(const ClientId& id);
     void broadcast(const std::string& method, const json& params);
     size_t client_count() const;
 
 private:
     mutable std::mutex mutex_;
-    std::unordered_map<ClientId, std::function<void(const std::string&)>> clients_;
+    std::unordered_map<ClientId, SinkFn> clients_;
 };
 
 class StreamableHttpTransport {
@@ -69,6 +70,7 @@ private:
     std::unique_ptr<httplib::Server> server_;
     SseStream sse_;
     std::atomic<bool> running_{false};
+    std::function<void(const std::string&, const json&)> notification_handler_;
 };
 
 }

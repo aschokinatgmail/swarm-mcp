@@ -30,7 +30,7 @@ struct ChannelSpec {
 
 class Channel {
 public:
-    Channel(SecureMqttClient& mqtt, const ChannelSpec& spec);
+    Channel(SecureMqttClient& mqtt, const ChannelSpec& spec, const std::string& swarm_id = "default");
     ~Channel() = default;
 
     bool publish(const json& data, const AuthToken& token);
@@ -46,12 +46,14 @@ private:
     SecureMqttClient& mqtt_;
     ChannelSpec spec_;
     std::string full_topic_;
+    std::string swarm_id_;
     std::function<void(const MqttEnvelope&)> message_cb_;
 };
 
 class ChannelManager {
 public:
-    explicit ChannelManager(SecureMqttClient& mqtt, const std::string& ns = "mcp-collab");
+    explicit ChannelManager(SecureMqttClient& mqtt, const std::string& ns = "mcp-collab",
+                            const std::string& swarm_id = "default");
 
     Channel& get(ChannelType type, const std::string& name = "");
     Channel& create(ChannelType type, const std::string& name = "", int qos = 1);
@@ -65,6 +67,7 @@ private:
 
     SecureMqttClient& mqtt_;
     std::string namespace_;
+    std::string swarm_id_;
     std::unordered_map<std::string, std::unique_ptr<Channel>> channels_;
 };
 

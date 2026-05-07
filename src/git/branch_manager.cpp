@@ -148,12 +148,12 @@ std::optional<BranchInfo> BranchManager::find_by_task(const std::string& task_id
 }
 
 bool BranchManager::commit_changes(const std::string& branch, const std::string& message,
-                                     const std::string& agent_id) {
+                                      const std::string& agent_id) {
     if (!git_.checkout(branch)) {
         spdlog::error("Failed to checkout branch for commit: {}", branch);
         return false;
     }
-    if (!git_.add()) {
+    if (!git_.add("-A")) {
         spdlog::error("Failed to stage changes on branch: {}", branch);
         return false;
     }

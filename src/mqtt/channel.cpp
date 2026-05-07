@@ -17,8 +17,8 @@ std::string Channel::type_prefix(ChannelType type) {
     return "unknown";
 }
 
-Channel::Channel(SecureMqttClient& mqtt, const ChannelSpec& spec)
-    : mqtt_(mqtt), spec_(spec) {
+Channel::Channel(SecureMqttClient& mqtt, const ChannelSpec& spec, const std::string& swarm_id)
+    : mqtt_(mqtt), spec_(spec), swarm_id_(swarm_id) {
     full_topic_ = std::format("mcp-collab/{}/{}{}",
         spec_.namespace_.empty() ? "default" : spec_.namespace_,
         type_prefix(spec_.type),
@@ -40,11 +40,12 @@ bool Channel::publish_unsigned(const json& data) {
         t.token_id = "swarm-mcp-internal";
         t.agent_id = "swarm-mcp-server";
         t.role = Role::Coordinator;
-        t.swarm_id = "internal";
         t.expires_at = std::chrono::system_clock::now() + std::chrono::hours(87600);
         return t;
     }();
-    return mqtt_.publish_signed(full_topic_, data, internal_token, spec_.qos, spec_.retained);
+    AuthToken token = internal_token;
+    token.swarm_id = swarm_id_;
+    return mqtt_.publish_signed(full_topic_, data, token, spec_.qos, spec_.retained);
 }
 
 void Channel::on_message(std::function<void(const MqttEnvelope&)> cb) {
@@ -54,8 +55,9 @@ void Channel::on_message(std::function<void(const MqttEnvelope&)> cb) {
 std::string Channel::topic() const { return full_topic_; }
 ChannelSpec Channel::spec() const { return spec_; }
 
-ChannelManager::ChannelManager(SecureMqttClient& mqtt, const std::string& ns)
-    : mqtt_(mqtt), namespace_(ns) {
+ChannelManager::ChannelManager(SecureMqttClient& mqtt, const std::string& ns,
+                                 const std::string& swarm_id)
+    : mqtt_(mqtt), namespace_(ns), swarm_id_(swarm_id) {
     create(ChannelType::TaskUpdates);
     create(ChannelType::AgentPresence);
     create(ChannelType::Events);
@@ -76,7 +78,7 @@ Channel& ChannelManager::get(ChannelType type, const std::string& name) {
 Channel& ChannelManager::create(ChannelType type, const std::string& name, int qos) {
     auto k = key(type, name);
     auto spec = ChannelSpec{.type = type, .namespace_ = namespace_, .name = name, .qos = qos};
-    channels_[k] = std::make_unique<Channel>(mqtt_, spec);
+    channels_[k] = std::make_unique<Channel>(mqtt_, spec, swarm_id_);
     return *channels_[k];
 }
 

@@ -4,6 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <random>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -174,15 +175,26 @@ bool AuthProvider::authorize(const AuthToken& token, Role minimum_role) const {
 }
 
 std::optional<AuthToken> AuthProvider::refresh_token(const std::string& token_str,
-                                                      std::chrono::seconds ttl) {
+                                                       std::chrono::seconds ttl) {
     auto existing = validate_token(token_str);
     if (!existing) return std::nullopt;
 
-    // Revoke old
     revoke_token(existing->token_id);
 
-    // Issue new with same role/swarm
     return issue_token(existing->agent_id, existing->role, existing->swarm_id, ttl);
+}
+
+std::string AuthProvider::generate_secret(size_t length) {
+    static const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<size_t> dist(0, sizeof(charset) - 2);
+    std::string secret;
+    secret.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        secret += charset[dist(gen)];
+    }
+    return secret;
 }
 
 }
