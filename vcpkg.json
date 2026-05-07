@@ -9,7 +9,8 @@
         "paho-mqtt",
         "cpp-httplib",
         "spdlog",
-        "openssl"
+        "openssl",
+        "gtest"
     ],
     "overrides": [],
     "builtin-baseline": ""
