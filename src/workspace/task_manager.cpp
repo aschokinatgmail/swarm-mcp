@@ -1,6 +1,7 @@
 #include "mcp_collab/task_manager.hpp"
 #include "mcp_collab/uuid.hpp"
 #include <algorithm>
+#include <unordered_set>
 #include <spdlog/spdlog.h>
 
 namespace mcp_collab {

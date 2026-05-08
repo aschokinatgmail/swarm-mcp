@@ -65,7 +65,7 @@ std::string AgentRegistry::register_agent(const AgentInfo& info, const AuthToken
 
     std::unique_lock lock(mutex_);
     AgentInfo agent = info;
-    if (agent.id.empty()) agent.id = generate_uuid();
+    if (agent.id.empty()) agent.id = token.agent_id.empty() ? generate_uuid() : token.agent_id;
     if (agent.hostname.empty()) agent.hostname = platform::hostname();
     if (agent.platform.empty()) agent.platform =
 #ifdef MCP_PLATFORM_WINDOWS
@@ -151,7 +151,7 @@ std::optional<AgentInfo> AgentRegistry::get_agent(const std::string& id) const {
     return std::nullopt;
 }
 
-std::vector<AgentInfo> AgentRegistry::list_agents(AgentStatus filter) const {
+std::vector<AgentInfo> AgentRegistry::list_agents(std::optional<AgentStatus> filter) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
     for (const auto& [_, agent] : agents_) {
@@ -162,7 +162,7 @@ std::vector<AgentInfo> AgentRegistry::list_agents(AgentStatus filter) const {
     return result;
 }
 
-std::vector<AgentInfo> AgentRegistry::list_swarm_agents(const std::string& swarm_id, AgentStatus filter) const {
+std::vector<AgentInfo> AgentRegistry::list_swarm_agents(const std::string& swarm_id, std::optional<AgentStatus> filter) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
     for (const auto& [_, agent] : agents_) {
@@ -226,7 +226,7 @@ size_t AgentRegistry::prune_stale(std::chrono::seconds timeout) {
 
         for (auto it = agents_.begin(); it != agents_.end();) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.last_heartbeat);
-            if (elapsed > timeout) {
+            if (elapsed >= timeout) {
                 pruned_agents.push_back(it->second);
                 it = agents_.erase(it);
                 pruned++;
@@ -275,6 +275,10 @@ bool AgentRegistry::set_agent_role(const std::string& agent_id, Role new_role, c
     spdlog::info("Agent role changed: agent={} {} -> {}", agent_id, role_to_str(old_role), role_to_str(new_role));
     if (callback_) callback_("agent.role_changed", agent);
     return true;
+}
+
+void AgentRegistry::on_change(RegistryCallback cb) {
+    callback_ = std::move(cb);
 }
 
 }

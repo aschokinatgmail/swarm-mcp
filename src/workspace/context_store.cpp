@@ -3,6 +3,28 @@
 
 namespace mcp_collab {
 
+json ContextEntry::to_json() const {
+    return {
+        {"key", key},
+        {"value", value},
+        {"owner", owner},
+        {"updated_at", std::chrono::duration_cast<std::chrono::milliseconds>(
+            updated_at.time_since_epoch()).count()},
+        {"version", version},
+    };
+}
+
+ContextEntry ContextEntry::from_json(const json& j) {
+    ContextEntry e;
+    e.key = j.value("key", "");
+    e.value = j.value("value", json());
+    e.owner = j.value("owner", "");
+    auto ts = j.value("updated_at", 0LL);
+    e.updated_at = std::chrono::system_clock::time_point{} + std::chrono::milliseconds(ts);
+    e.version = j.value("version", 1);
+    return e;
+}
+
 bool ContextStore::set(const std::string& key, const json& value, const std::string& owner) {
     ContextEntry entry;
     bool is_new;
@@ -60,6 +82,10 @@ bool ContextStore::update_partial(const std::string& key, const json& patch, con
         std::unique_lock lock(mutex_);
         auto it = store_.find(key);
         if (it == store_.end()) return false;
+
+        if (patch.is_object() && !it->second.value.is_object()) {
+            return false;
+        }
 
         if (patch.is_object() && it->second.value.is_object()) {
             it->second.value.merge_patch(patch);

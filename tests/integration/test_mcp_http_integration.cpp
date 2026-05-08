@@ -21,22 +21,22 @@ using namespace mcp_collab;
 class McpHttpIntegrationTest : public ::testing::Test {
 protected:
     std::string server_host = "127.0.0.1";
-    int server_port = 19876;
+    uint16_t server_port = 19876;
     McpProtocol proto{ServerInfo{.name = "test-server", .version = "1.0.0"}};
     AuthProvider auth{"test-secret"};
     TaskManager tasks;
     AgentRegistry agents{"test-swarm"};
     ContextStore context;
     EventBus events;
-    MqttClient mqtt{MqttConfig{.host = "localhost", .port = 18839}};
+    SecureMqttClient mqtt{MqttConfig{.host = "localhost", .port = 18839}, "test-swarm", "test-secret"};
     GitOperations git{"."};
     BranchManager branches{git, "collab/"};
     MergeCoordinator merges{git, branches};
-    ChannelManager channels{mqtt, "test-swarm"};
+    ChannelManager channels{mqtt, "mcp-collab", "test-swarm"};
     std::unique_ptr<StreamableHttpTransport> transport;
 
     void SetUp() override {
-        register_collab_tools(proto, tasks, agents, context, events, branches, merges, mqtt, channels);
+        register_collab_tools(proto, tasks, agents, context, events, branches, merges, mqtt.raw_client(), channels);
         register_collab_resources(proto, tasks, agents, context, events);
         register_collab_prompts(proto);
 
@@ -73,41 +73,39 @@ TEST_F(McpHttpIntegrationTest, InitializeAndListTools) {
 }
 
 TEST_F(McpHttpIntegrationTest, CreateAndListTasks) {
-    send_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
 
-    json create_req = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
-        {"params", {{"name", "task_create"}, {"arguments", {{"title", "Integration test"}, {"creator", "test-agent"}}},
-                    {"_auth", {{"agent_id", "a1"}, {"role", "worker"}, {"swarm_id", "s1"}}}}
-    };
+    json create_req = json::parse(
+        R"({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"task_create","arguments":{"title":"Integration test","creator":"test-agent"},"_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
     auto create_resp = send_request(create_req);
     EXPECT_TRUE(create_resp.contains("result"));
     EXPECT_TRUE(create_resp["result"]["content"][0]["text"].is_string());
 
-    json list_req = {{"jsonrpc", "2.0"}, {"id", 4}, {"method", "tools/call"},
-        {"params", {{"name", "task_list"}, {"arguments", {}}, {"_auth", {{"role", "observer"}}}}}
-    };
+    json list_req = json::parse(
+        R"({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"task_list","arguments":{},"_auth":{"role":"observer"}}})"
+    );
     auto list_resp = send_request(list_req);
     EXPECT_TRUE(list_resp.contains("result"));
 }
 
 TEST_F(McpHttpIntegrationTest, ContextSetAndGet) {
-    send_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
 
-    json set_req = {{"jsonrpc", "2.0"}, {"id", 5}, {"method", "tools/call"},
-        {"params", {{"name", "context_set"}, {"arguments", {{"key", "test.key"}, {"value", 42}}},
-                    {"_auth", {{"agent_id", "a1"}, {"role", "worker"}, {"swarm_id", "s1"}}}}
-    };
+    json set_req = json::parse(
+        R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"context_set","arguments":{"key":"test.key","value":42},"_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
     send_request(set_req);
 
-    json get_req = {{"jsonrpc", "2.0"}, {"id", 6}, {"method", "tools/call"},
-        {"params", {{"name", "context_get"}, {"arguments", {{"key", "test.key"}}}, {"_auth", {{"role", "worker"}}}}
-    };
+    json get_req = json::parse(
+        R"({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"context_get","arguments":{"key":"test.key"},"_auth":{"role":"worker"}}})"
+    );
     auto get_resp = send_request(get_req);
     EXPECT_TRUE(get_resp.contains("result"));
 }
 
 TEST_F(McpHttpIntegrationTest, ResourcesList) {
-    send_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
 
     json res_req = {{"jsonrpc", "2.0"}, {"id", 7}, {"method", "resources/list"}, {"params", {}}};
     auto res_resp = send_request(res_req);
@@ -115,7 +113,7 @@ TEST_F(McpHttpIntegrationTest, ResourcesList) {
 }
 
 TEST_F(McpHttpIntegrationTest, PromptsList) {
-    send_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
 
     json prompts_req = {{"jsonrpc", "2.0"}, {"id", 8}, {"method", "prompts/list"}, {"params", {}}};
     auto prompts_resp = send_request(prompts_req);
@@ -126,9 +124,9 @@ TEST_F(McpHttpIntegrationTest, AuthRequiredBlocksUnauthorized) {
     AuthProvider secure_auth{"my-secret"};
     McpProtocol secure_proto{ServerInfo{.name = "secure", .version = "1.0.0"}};
     StreamableHttpTransport secure_transport(secure_proto, secure_auth, StreamableHttpConfig{
-        .host = server_host, .port = server_port + 1, .endpoint = "/mcp", .require_auth = true,
+        .host = server_host, .port = static_cast<uint16_t>(server_port + 1), .endpoint = "/mcp", .require_auth = true,
     });
-    register_collab_tools(secure_proto, tasks, agents, context, events, branches, merges, mqtt, channels);
+    register_collab_tools(secure_proto, tasks, agents, context, events, branches, merges, mqtt.raw_client(), channels);
     register_collab_resources(secure_proto, tasks, agents, context, events);
     secure_transport.start();
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -139,27 +137,28 @@ TEST_F(McpHttpIntegrationTest, AuthRequiredBlocksUnauthorized) {
     EXPECT_EQ(res->status, 401);
 
     auto token = secure_auth.issue_token("agent-1", Role::Worker, "test-swarm");
-    auto auth_res = client.Post("/mcp", R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})",
-        {{"Authorization", "Bearer " + token.token_id + "." + "placeholder"}}, "application/json");
+    auto auth_res = client.Post("/mcp",
+        httplib::Headers{{"Authorization", "Bearer " + token.token_id + "." + "placeholder"}},
+        R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})",
+        "application/json");
     secure_transport.stop();
 }
 
 TEST_F(McpHttpIntegrationTest, PingResponds) {
-    send_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params": {}}});
+    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
     json ping_req = {{"jsonrpc", "2.0"}, {"id", 9}, {"method", "ping"}, {"params", {}}};
     auto ping_resp = send_request(ping_req);
     EXPECT_TRUE(ping_resp.contains("result"));
 }
 
 TEST_F(McpHttpIntegrationTest, ToolAuthEnforcement) {
-    send_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params": {}}});
+    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
 
     // Observer trying to create a task (should fail at permission level)
     // Since require_auth=false, a synthetic observer token is used via _auth
-    json req = {{"jsonrpc", "2.0"}, {"id", 10}, {"method", "tools/call"},
-        {"params", {{"name", "task_create"}, {"arguments", {{"title", "Blocked"}, {"creator", "obs"}}},
-                    {"_auth", {{"agent_id", "obs"}, {"role", "observer"}, {"swarm_id", "s1"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"task_create","arguments":{"title":"Blocked","creator":"obs"},"_auth":{"agent_id":"obs","role":"observer","swarm_id":"s1"}}})"
+    );
     auto resp = send_request(req);
     EXPECT_TRUE(resp.contains("result"));
     EXPECT_TRUE(resp["result"]["isError"] == true || (resp.contains("error")));

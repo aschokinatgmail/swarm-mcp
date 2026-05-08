@@ -8,6 +8,8 @@
 #include <cstdio>
 #else
 #include <unistd.h>
+#include <sys/select.h>
+#include <sys/wait.h>
 #endif
 
 namespace mcp_collab {
@@ -21,17 +23,14 @@ GitResult GitOperations::exec(const std::string& args) const {
     std::string cmd = std::format("git -C \"{}\" {}", repo_path_, args);
 
     // Validate: reject shell metacharacters to prevent injection
-    static const std::string dangerous_chars = "&|;`$(){}<>!\n\r";
+    static const std::string dangerous_chars = "&|;`(){}!\n\r";
     for (size_t i = 0; i < args.size(); ++i) {
         if (dangerous_chars.find(args[i]) != std::string::npos) {
-            // Allow $(...) only within double-quoted arguments (--format="...")
-            // Reject everything else
-            if (args[i] != '$') {
-                spdlog::error("Shell injection attempt rejected in git args: {}", args);
-                result.exit_code = -1;
-                return result;
-            }
-            // For $, check if it's inside a quoted string
+            spdlog::error("Shell injection attempt rejected in git args: {}", args);
+            result.exit_code = -1;
+            return result;
+        }
+        if (args[i] == '$') {
             int quote_count = 0;
             for (size_t j = 0; j < i; ++j) {
                 if (args[j] == '"') quote_count++;
@@ -85,18 +84,48 @@ GitResult GitOperations::exec(const std::string& args) const {
     CloseHandle(h_out_read);
     CloseHandle(h_err_read);
 #else
-    FILE* pipe = popen((cmd + " 2>&1").c_str(), "r");
+    std::string full_cmd = cmd + " 2>&1";
+    FILE* pipe = popen(full_cmd.c_str(), "r");
     if (!pipe) {
         result.success = false;
         return result;
     }
+
+    fd_set read_fds;
+    struct timeval tv;
     char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe)) {
-        result.stdout_out += buffer;
+    bool timed_out = false;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+
+    while (true) {
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        if (remaining.count() <= 0) { timed_out = true; break; }
+
+        int fd = fileno(pipe);
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        tv.tv_sec = static_cast<long>(remaining.count()) / 1000;
+        tv.tv_usec = (static_cast<long>(remaining.count()) % 1000) * 1000;
+
+        int sel = select(fd + 1, &read_fds, nullptr, nullptr, &tv);
+        if (sel < 0) break;
+        if (sel == 0) { timed_out = true; break; }
+
+        size_t n = fread(buffer, 1, sizeof(buffer), pipe);
+        if (n == 0) break;
+        result.stdout_out.append(buffer, n);
     }
+
     int status = pclose(pipe);
-    result.exit_code = WEXITSTATUS(status);
-    result.success = (result.exit_code == 0);
+    if (timed_out) {
+        result.success = false;
+        result.exit_code = -1;
+        result.stderr_out = "git operation timed out after 30 seconds";
+    } else {
+        result.exit_code = WEXITSTATUS(status);
+        result.success = (result.exit_code == 0);
+    }
 #endif
 
     spdlog::debug("git {}: exit={} out_len={}", args, result.exit_code, result.stdout_out.size());
@@ -135,7 +164,7 @@ bool GitOperations::push() const { return exec("push").success; }
 
 bool GitOperations::commit(const std::string& message, const std::string& author) const {
     std::string args = std::format("commit -m \"{}\"", message);
-    if (!author.empty()) args += std::format(" --author=\"{}\"", author);
+    if (!author.empty()) args += std::format(" --author=\"{} <{}>\"", author, author);
     return exec(args).success;
 }
 

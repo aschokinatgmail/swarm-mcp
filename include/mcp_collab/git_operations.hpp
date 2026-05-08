@@ -9,7 +9,7 @@
 
 namespace mcp_collab {
 
-using json = nlohmann/json;
+using json = nlohmann::json;
 
 struct GitResult {
     bool success{false};

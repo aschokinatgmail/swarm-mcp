@@ -10,12 +10,9 @@ protected:
 };
 
 TEST_F(McpProtocolTest, Initialize) {
-    json req = {
-        {"jsonrpc", "2.0"},
-        {"id", 1},
-        {"method", "initialize"},
-        {"params", {{"protocolVersion", "2025-03-26"}, {"capabilities", {}}, {"clientInfo", {{"name", "test-client"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test-client"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_EQ(resp["result"]["protocolVersion"], "2025-03-26");
     EXPECT_EQ(resp["result"]["serverInfo"]["name"], "test-server");
@@ -62,9 +59,9 @@ TEST_F(McpProtocolTest, CallTool) {
     proto.register_tool({.name = "add", .description = "Add numbers",
         .input_schema = {{"type", "object"}}, .required_permission = Permission::TaskRead},
         [](const json& args) -> json { return args.value("a", 0) + args.value("b", 0); });
-    json req = {{"jsonrpc", "2.0"}, {"id", 5}, {"method", "tools/call"},
-        {"params", {{"name", "add"}, {"arguments", {{"a", 3}, {"b", 4}}}, {"_auth", {{"agent_id", "a1"}, {"role", "worker"}, {"swarm_id", "s1"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"add","arguments":{"a":3,"b":4},"_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp.contains("result"));
     EXPECT_EQ(resp["result"]["isError"], false);
@@ -75,9 +72,9 @@ TEST_F(McpProtocolTest, CallToolInsufficientPermission) {
     proto.register_tool({.name = "dangerous", .description = "Admin only",
         .input_schema = {{"type", "object"}}, .required_permission = Permission::Admin},
         [](const json&) -> json { return {{"secret", true}}; });
-    json req = {{"jsonrpc", "2.0"}, {"id", 6}, {"method", "tools/call"},
-        {"params", {{"name", "dangerous"}, {"_auth", {{"agent_id", "a1"}, {"role", "worker"}, {"swarm_id", "s1"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"dangerous","_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp.contains("error"));
     EXPECT_EQ(resp["error"]["code"], -32003);
@@ -85,9 +82,9 @@ TEST_F(McpProtocolTest, CallToolInsufficientPermission) {
 
 TEST_F(McpProtocolTest, CallNonexistentTool) {
     proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
-    json req = {{"jsonrpc", "2.0"}, {"id", 7}, {"method", "tools/call"},
-        {"params", {{"name", "nonexistent"}, {"_auth", {{"role", "worker"}}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"nonexistent","_auth":{"role":"worker"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp.contains("error"));
 }
@@ -106,9 +103,9 @@ TEST_F(McpProtocolTest, ReadResource) {
     proto.register_resource({.uri = "swarm://data", .name = "Data", .description = "desc",
         .required_permission = Permission::TaskRead},
         [](const json&) -> json { return {{"value", 99}}; });
-    json req = {{"jsonrpc", "2.0"}, {"id", 9}, {"method", "resources/read"},
-        {"params", {{"uri", "swarm://data"}, {"_auth", {{"role", "worker"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":9,"method":"resources/read","params":{"uri":"swarm://data","_auth":{"role":"worker"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp.contains("result"));
 }
@@ -118,9 +115,9 @@ TEST_F(McpProtocolTest, ReadResourceInsufficientPermission) {
     proto.register_resource({.uri = "swarm://secret", .name = "Secret", .description = "desc",
         .required_permission = Permission::Admin},
         [](const json&) -> json { return {{"secret", 1}}; });
-    json req = {{"jsonrpc", "2.0"}, {"id", 10}, {"method", "resources/read"},
-        {"params", {{"uri", "swarm://secret"}, {"_auth", {{"role", "observer"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":10,"method":"resources/read","params":{"uri":"swarm://secret","_auth":{"role":"observer"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp.contains("error"));
 }
@@ -140,9 +137,9 @@ TEST_F(McpProtocolTest, GetPrompt) {
     proto.register_prompt({.name = "greet2", .description = "Greeting"}, [](const json& args) -> json {
         return json::array({{{"role", "user"}, {"content", "Hi " + args.value("name", "")}}});
     });
-    json req = {{"jsonrpc", "2.0"}, {"id", 12}, {"method", "prompts/get"},
-        {"params", {{"name", "greet2"}, {"arguments", {{"name", "World"}}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":12,"method":"prompts/get","params":{"name":"greet2","arguments":{"name":"World"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp.contains("result"));
 }
@@ -181,9 +178,9 @@ TEST_F(McpProtocolTest, ToolHandlerException) {
     proto.register_tool({.name = "crasher", .description = "Crashes", .input_schema = {},
         .required_permission = Permission::TaskRead},
         [](const json&) -> json { throw std::runtime_error("boom"); });
-    json req = {{"jsonrpc", "2.0"}, {"id", 14}, {"method", "tools/call"},
-        {"params", {{"name", "crasher"}, {"_auth", {{"role", "worker"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"crasher","_auth":{"role":"worker"}}})"
+    );
     auto resp = proto.handle_request(req);
     EXPECT_TRUE(resp["result"]["isError"] == true);
 }
@@ -194,9 +191,9 @@ TEST_F(McpProtocolTest, AuthContextExtracted) {
     proto.register_tool({.name = "auth_test", .description = "auth test", .input_schema = {},
         .required_permission = Permission::TaskRead},
         [&](const json& args) -> json { captured_agent = args.value("_auth", json::object()).value("agent_id", "none"); return {}; });
-    json req = {{"jsonrpc", "2.0"}, {"id", 15}, {"method", "tools/call"},
-        {"params", {{"name", "auth_test"}, {"_auth", {{"agent_id", "agent-42"}, {"role", "worker"}, {"swarm_id", "s1"}}}}
-    };
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"auth_test","_auth":{"agent_id":"agent-42","role":"worker","swarm_id":"s1"}}})"
+    );
     proto.handle_request(req);
     EXPECT_EQ(captured_agent, "agent-42");
 }

@@ -41,7 +41,7 @@ public:
 
 private:
     mutable std::shared_mutex events_mutex_;
-    mutable std::mutex handlers_mutex_;
+    mutable std::shared_mutex handlers_mutex_;
     std::vector<Event> event_log_;
     static constexpr size_t max_log_size_{10000};
     std::unordered_map<std::string, std::vector<std::pair<SubscriptionId, EventHandler>>> handlers_;

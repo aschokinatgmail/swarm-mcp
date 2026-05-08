@@ -56,10 +56,10 @@ public:
 private:
     static int on_message_arrived(void* context, char* topic_name, int topic_len, MQTTAsync_message* message);
     static void on_connection_lost(void* context, char* cause);
-    static void on_connect_success(void* context, MQTTAsync_successResponse* response);
+    static void on_connect_success(void* context, MQTTAsync_successData* response);
     static void on_connect_failure(void* context, MQTTAsync_failureData* response);
-    static void on_disconnect_success(void* context, MQTTAsync_successResponse* response);
-    static void on_subscribe_success(void* context, MQTTAsync_successResponse* response);
+    static void on_disconnect_success(void* context, MQTTAsync_successData* response);
+    static void on_subscribe_success(void* context, MQTTAsync_successData* response);
     static void on_subscribe_failure(void* context, MQTTAsync_failureData* response);
 
     void handle_message(const std::string& topic, const std::string& payload);

@@ -6,6 +6,7 @@
 #include <shared_mutex>
 #include <functional>
 #include <optional>
+#include <chrono>
 
 #include "mcp_collab/git_operations.hpp"
 

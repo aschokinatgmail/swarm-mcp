@@ -73,6 +73,10 @@ constexpr uint32_t operator|(Permission a, Permission b) {
     return static_cast<uint32_t>(a) | static_cast<uint32_t>(b);
 }
 
+constexpr uint32_t operator|(uint32_t a, Permission b) {
+    return a | static_cast<uint32_t>(b);
+}
+
 // Role → permission bitmask
 inline uint32_t role_permissions(Role r) {
     switch (r) {
@@ -171,12 +175,6 @@ public:
     }
 
     static std::string generate_secret(size_t length = 32);
-
-    static bool verify_sig(const std::string& payload, const std::string& signature, const std::string& secret) {
-        auto expected = compute_hmac(payload, secret);
-        if (expected.size() != signature.size()) return false;
-        return std::equal(expected.begin(), expected.end(), signature.begin());
-    }
 
 private:
     std::string swarm_secret_;

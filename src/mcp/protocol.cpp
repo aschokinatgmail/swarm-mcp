@@ -221,22 +221,44 @@ json McpProtocol::handle_initialized(const McpRequest&) {
     return {};
 }
 
-json McpProtocol::handle_tools_list(const McpRequest&) {
+json McpProtocol::handle_tools_list(const McpRequest& req) {
+    int cursor = 0;
+    int limit = 100;
+    if (req.params.contains("_cursor") && req.params["_cursor"].is_number()) cursor = req.params["_cursor"].get<int>();
+    if (req.params.contains("_limit") && req.params["_limit"].is_number()) limit = req.params["_limit"].get<int>();
+    if (limit <= 0) limit = 100;
+    if (limit > 1000) limit = 1000;
+
     json tools = json::array();
+    int i = 0;
+    int count = 0;
     for (const auto& [name, def] : tools_) {
+        if (i < cursor) { i++; continue; }
+        if (count >= limit) break;
         json t = {
             {"name", def.name},
             {"description", def.description},
             {"inputSchema", def.input_schema},
         };
         tools.push_back(t);
+        count++;
+        i++;
     }
-    return {{"tools", tools}};
+
+    json result = {{"tools", tools}};
+    if (i < static_cast<int>(tools_.size())) {
+        result["_nextCursor"] = i;
+    }
+    return result;
 }
 
 json McpProtocol::handle_tools_call(const McpRequest& req) {
     auto name = req.params.value("name", "");
     auto args = req.params.value("arguments", json::object());
+
+    if (req.params.contains("_auth")) {
+        args["_auth"] = req.params["_auth"];
+    }
 
     auto it = tool_handlers_.find(name);
     if (it == tool_handlers_.end()) {
@@ -259,17 +281,35 @@ json McpProtocol::handle_tools_call(const McpRequest& req) {
     }
 }
 
-json McpProtocol::handle_resources_list(const McpRequest&) {
+json McpProtocol::handle_resources_list(const McpRequest& req) {
+    int cursor = 0;
+    int limit = 100;
+    if (req.params.contains("_cursor") && req.params["_cursor"].is_number()) cursor = req.params["_cursor"].get<int>();
+    if (req.params.contains("_limit") && req.params["_limit"].is_number()) limit = req.params["_limit"].get<int>();
+    if (limit <= 0) limit = 100;
+    if (limit > 1000) limit = 1000;
+
     json res = json::array();
+    int i = 0;
+    int count = 0;
     for (const auto& [uri, def] : resources_) {
+        if (i < cursor) { i++; continue; }
+        if (count >= limit) break;
         res.push_back({
             {"uri", def.uri},
             {"name", def.name},
             {"description", def.description},
             {"mimeType", def.mime_type},
         });
+        count++;
+        i++;
     }
-    return {{"resources", res}};
+
+    json result = {{"resources", res}};
+    if (i < static_cast<int>(resources_.size())) {
+        result["_nextCursor"] = i;
+    }
+    return result;
 }
 
 json McpProtocol::handle_resources_read(const McpRequest& req) {
@@ -295,9 +335,20 @@ json McpProtocol::handle_resources_subscribe(const McpRequest&) {
     return {{"subscribed", true}};
 }
 
-json McpProtocol::handle_prompts_list(const McpRequest&) {
+json McpProtocol::handle_prompts_list(const McpRequest& req) {
+    int cursor = 0;
+    int limit = 100;
+    if (req.params.contains("_cursor") && req.params["_cursor"].is_number()) cursor = req.params["_cursor"].get<int>();
+    if (req.params.contains("_limit") && req.params["_limit"].is_number()) limit = req.params["_limit"].get<int>();
+    if (limit <= 0) limit = 100;
+    if (limit > 1000) limit = 1000;
+
     json prompts = json::array();
+    int i = 0;
+    int count = 0;
     for (const auto& [name, def] : prompts_) {
+        if (i < cursor) { i++; continue; }
+        if (count >= limit) break;
         json p = {{"name", def.name}, {"description", def.description}};
         if (!def.arguments.empty()) {
             json args = json::array();
@@ -305,8 +356,15 @@ json McpProtocol::handle_prompts_list(const McpRequest&) {
             p["arguments"] = args;
         }
         prompts.push_back(p);
+        count++;
+        i++;
     }
-    return {{"prompts", prompts}};
+
+    json result = {{"prompts", prompts}};
+    if (i < static_cast<int>(prompts_.size())) {
+        result["_nextCursor"] = i;
+    }
+    return result;
 }
 
 json McpProtocol::handle_prompts_get(const McpRequest& req) {
@@ -323,7 +381,7 @@ json McpProtocol::handle_prompts_get(const McpRequest& req) {
 }
 
 json McpProtocol::handle_ping(const McpRequest&) {
-    return {};
+    return json::object();
 }
 
 }

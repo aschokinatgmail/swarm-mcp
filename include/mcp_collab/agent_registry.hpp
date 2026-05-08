@@ -51,8 +51,8 @@ public:
 
     // Read operations — no auth required (checked at protocol layer)
     std::optional<AgentInfo> get_agent(const std::string& id) const;
-    std::vector<AgentInfo> list_agents(AgentStatus filter = {}) const;
-    std::vector<AgentInfo> list_swarm_agents(const std::string& swarm_id, AgentStatus filter = {}) const;
+    std::vector<AgentInfo> list_agents(std::optional<AgentStatus> filter = std::nullopt) const;
+    std::vector<AgentInfo> list_swarm_agents(const std::string& swarm_id, std::optional<AgentStatus> filter = std::nullopt) const;
     std::vector<AgentInfo> find_by_capability(const std::string& capability) const;
     std::vector<AgentInfo> find_idle() const;
     std::vector<AgentInfo> find_idle_in_swarm(const std::string& swarm_id) const;

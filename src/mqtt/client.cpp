@@ -182,7 +182,7 @@ void MqttClient::on_connection_lost(void* context, char* cause) {
     if (self->on_disconnect_cb_) self->on_disconnect_cb_();
 }
 
-void MqttClient::on_connect_success(void* context, MQTTAsync_successResponse*) {
+void MqttClient::on_connect_success(void* context, MQTTAsync_successData*) {
     auto* self = static_cast<MqttClient*>(context);
     self->connected_.store(true);
     self->reconnect_delay_ms_ = 1000;
@@ -210,13 +210,13 @@ void MqttClient::on_connect_failure(void* context, MQTTAsync_failureData* respon
     self->reconnect_delay_ms_ = std::min(self->reconnect_delay_ms_ * 2, max_reconnect_delay_ms_);
 }
 
-void MqttClient::on_disconnect_success(void* context, MQTTAsync_successResponse*) {
+void MqttClient::on_disconnect_success(void* context, MQTTAsync_successData*) {
     auto* self = static_cast<MqttClient*>(context);
     self->connected_.store(false);
     spdlog::info("MQTT disconnected");
 }
 
-void MqttClient::on_subscribe_success(void*, MQTTAsync_successResponse*) {
+void MqttClient::on_subscribe_success(void*, MQTTAsync_successData*) {
     spdlog::debug("MQTT subscribe acknowledged");
 }
 

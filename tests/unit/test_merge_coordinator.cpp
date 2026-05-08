@@ -4,6 +4,7 @@
 #include "mcp_collab/branch_manager.hpp"
 #include <filesystem>
 #include <fstream>
+#include <thread>
 
 using namespace mcp_collab;
 
@@ -16,6 +17,8 @@ protected:
 
     void SetUp() override {
         test_repo_path = std::filesystem::temp_directory_path().string() + "/swarm-mcp-merge-test";
+        std::error_code ec;
+        std::filesystem::remove_all(test_repo_path, ec);
         std::filesystem::create_directories(test_repo_path);
         std::filesystem::current_path(test_repo_path);
         system("git init");
@@ -30,7 +33,14 @@ protected:
     }
 
     void TearDown() override {
-        std::filesystem::remove_all(test_repo_path);
+        coordinator.reset();
+        branch_mgr.reset();
+        git.reset();
+        std::error_code ec;
+        for (int attempt = 0; attempt < 10; ++attempt) {
+            if (std::filesystem::remove_all(test_repo_path, ec); !std::filesystem::exists(test_repo_path, ec)) return;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
     }
 };
 

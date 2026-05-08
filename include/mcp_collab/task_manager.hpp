@@ -59,6 +59,11 @@ struct TaskFilter {
     std::string search_term;
 };
 
+std::string task_status_str(TaskStatus s);
+TaskStatus task_status_from_str(const std::string& s);
+std::string task_priority_str(TaskPriority p);
+TaskPriority task_priority_from_str(const std::string& p);
+
 class TaskManager {
 public:
     TaskManager() = default;
@@ -76,6 +81,7 @@ public:
     bool set_status(const std::string& id, TaskStatus status);
     bool add_dependency(const std::string& id, const std::string& dep_id);
     bool remove_dependency(const std::string& id, const std::string& dep_id);
+    bool add_tag(const std::string& id, const std::string& tag);
     bool has_dependency(const std::string& id, const std::string& dep_id) const;
     bool would_create_cycle(const std::string& id, const std::string& dep_id) const;
 

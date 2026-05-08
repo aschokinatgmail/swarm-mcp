@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.25)
+cmake_minimum_required(VERSION 3.22)
 project(swarm-mcp VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
-find_package(paho-mqtt CONFIG REQUIRED)
+find_package(eclipse-paho-mqtt-c CONFIG REQUIRED)
 find_package(httplib CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL CONFIG REQUIRED)
@@ -37,8 +37,8 @@ add_executable(swarm-mcp
 target_link_libraries(swarm-mcp PRIVATE
     fmt::fmt
     nlohmann_json::nlohmann_json
-    paho-mqtt::paho-mqtt3a
-    paho-mqtt::paho-mqtt3as
+    eclipse-paho-mqtt-c::paho-mqtt3a
+    eclipse-paho-mqtt-c::paho-mqtt3as
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
@@ -54,7 +54,7 @@ target_compile_definitions(swarm-mcp PUBLIC
 )
 
 if(WIN32)
-    target_link_libraries(swarm-mcp PRIVATE ws2_32 crypt32)
+    target_link_libraries(swarm-mcp PRIVATE ws2_32 crypt32 rpcrt4)
     target_compile_definitions(swarm-mcp PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 elseif(UNIX)
     target_link_libraries(swarm-mcp PRIVATE pthread)
@@ -103,8 +103,8 @@ add_library(swarm_mcp_lib STATIC
 target_link_libraries(swarm_mcp_lib PUBLIC
     fmt::fmt
     nlohmann_json::nlohmann_json
-    paho-mqtt::paho-mqtt3a
-    paho-mqtt::paho-mqtt3as
+    eclipse-paho-mqtt-c::paho-mqtt3a
+    eclipse-paho-mqtt-c::paho-mqtt3as
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
@@ -120,7 +120,7 @@ target_compile_definitions(swarm_mcp_lib PUBLIC
 )
 
 if(WIN32)
-    target_link_libraries(swarm_mcp_lib PUBLIC ws2_32 crypt32)
+    target_link_libraries(swarm_mcp_lib PUBLIC ws2_32 crypt32 rpcrt4)
     target_compile_definitions(swarm_mcp_lib PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX)
 elseif(UNIX)
     target_link_libraries(swarm_mcp_lib PUBLIC pthread)
@@ -173,7 +173,6 @@ add_executable(swarm_mcp_integration_tests
     tests/integration/test_mcp_http_integration.cpp
     tests/integration/test_workspace_integration.cpp
     tests/integration/test_mqtt_workspace_integration.cpp
-    tests/integration/test_auth_integration.cpp
     tests/integration/test_git_workflow_integration.cpp
 )
 

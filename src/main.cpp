@@ -97,7 +97,7 @@ int main(int argc, char* argv[]) {
 
     // Config precedence: CLI args > env vars > config file > defaults.
     // For each value, pick the first non-empty source.
-    auto pick_str = [](const auto& cli, const auto& env, const auto& file, const auto& def) {
+    auto pick_str = [](const std::string& cli, const std::string& env, const std::string& file, const std::string& def) -> std::string {
         if (!cli.empty()) return cli;
         if (!env.empty()) return env;
         if (!file.empty()) return file;

@@ -240,7 +240,7 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
             }
             return true;
         },
-        [this, client_id](bool success) {
+        [this, client_id, queue_cv, disconnected](bool success) {
             disconnected->store(true);
             queue_cv->notify_all();
             sse_.remove_client(client_id);
