@@ -8,6 +8,37 @@
 
 namespace mcp_collab {
 
+RateLimiter::RateLimiter(int max_requests_per_minute) : max_rpm_(max_requests_per_minute) {}
+
+bool RateLimiter::allow(const std::string& key) {
+    if (max_rpm_ <= 0) return true;
+
+    std::lock_guard lock(mutex_);
+    auto now = std::chrono::steady_clock::now();
+    auto it = buckets_.find(key);
+
+    if (it == buckets_.end()) {
+        buckets_[key] = {1, now};
+        return true;
+    }
+
+    auto& [count, window_start] = it->second;
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - window_start);
+
+    if (elapsed >= std::chrono::seconds(60)) {
+        count = 1;
+        window_start = now;
+        return true;
+    }
+
+    if (count >= max_rpm_) {
+        return false;
+    }
+
+    count++;
+    return true;
+}
+
 SseStream::ClientId SseStream::add_client(SinkFn sink) {
     auto id = generate_uuid();
     std::lock_guard lock(mutex_);
@@ -45,7 +76,7 @@ size_t SseStream::client_count() const {
 
 StreamableHttpTransport::StreamableHttpTransport(McpProtocol& protocol, AuthProvider& auth,
                                                  const StreamableHttpConfig& config)
-    : protocol_(protocol), auth_(auth), config_(config) {
+    : protocol_(protocol), auth_(auth), config_(config), rate_limiter_(config.rate_limit_rpm) {
     protocol_.on_notification([this](const std::string& method, const json& params) {
         send_sse_notification(method, params);
     });
@@ -122,11 +153,17 @@ bool StreamableHttpTransport::check_permission(const AuthToken& token, Permissio
 }
 
 void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::Response& res) {
-    // Auth check
     auto token = authenticate(req);
     if (!token) {
         res.status = 401;
         res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32001,"message":"Authentication required"}})", "application/json");
+        return;
+    }
+
+    std::string rate_key = token->agent_id.empty() ? req.remote_addr : token->agent_id;
+    if (!rate_limiter_.allow(rate_key)) {
+        res.status = 429;
+        res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32004,"message":"Rate limit exceeded"}})", "application/json");
         return;
     }
 

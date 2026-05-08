@@ -32,6 +32,7 @@ add_executable(swarm-mcp
     src/http/handler.cpp
     src/util/auth.cpp
     src/util/config.cpp
+    src/util/persistence.cpp
 )
 
 target_link_libraries(swarm-mcp PRIVATE
@@ -98,6 +99,7 @@ add_library(swarm_mcp_lib STATIC
     src/http/handler.cpp
     src/util/auth.cpp
     src/util/config.cpp
+    src/util/persistence.cpp
 )
 
 target_link_libraries(swarm_mcp_lib PUBLIC

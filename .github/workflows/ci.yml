@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [g++-13, clang++-17]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.compiler == 'g++-13' && 'g++-13' || 'clang-17' }} cmake ninja-build
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        run: |
+          export CXX=${{ matrix.compiler }}
+          cmake -B build -GNinja \
+            -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run unit tests
+        working-directory: build
+        run: ctest --output-on-failure -E "Integration|MqttWorkspace|GitWorkflow" -j$(nproc)
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run unit tests
+        working-directory: build
+        run: ctest --output-on-failure -C Release -E "Integration|MqttWorkspace|GitWorkflow"
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ hashFiles('vcpkg.json') }}
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Run unit tests
+        working-directory: build
+        run: ctest --output-on-failure -E "Integration|MqttWorkspace|GitWorkflow" -j$(sysctl -n hw.ncpu)

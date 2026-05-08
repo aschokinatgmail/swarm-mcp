@@ -7,6 +7,7 @@
 #include <mutex>
 #include <atomic>
 #include <thread>
+#include <chrono>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -23,6 +24,19 @@ struct StreamableHttpConfig {
     std::string cors_origin{""};
     int thread_pool_size{4};
     bool require_auth{true};
+    int rate_limit_rpm{0};
+};
+
+class RateLimiter {
+public:
+    explicit RateLimiter(int max_requests_per_minute = 0);
+
+    bool allow(const std::string& key);
+
+private:
+    int max_rpm_;
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, std::pair<int, std::chrono::steady_clock::time_point>> buckets_;
 };
 
 class SseStream {
@@ -69,6 +83,7 @@ private:
     StreamableHttpConfig config_;
     std::unique_ptr<httplib::Server> server_;
     SseStream sse_;
+    RateLimiter rate_limiter_;
     std::atomic<bool> running_{false};
     std::function<void(const std::string&, const json&)> notification_handler_;
 };
