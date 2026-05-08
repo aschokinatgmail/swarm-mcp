@@ -74,14 +74,14 @@ TEST_F(GitOperationsTest, BranchAndCheckout) {
     GitOperations git(test_repo_path);
     EXPECT_TRUE(git.checkout("feature-test", true));
     EXPECT_EQ(git.current_branch(), "feature-test");
-    EXPECT_TRUE(git.checkout("master"));
-    EXPECT_EQ(git.current_branch(), "master");
+    EXPECT_TRUE(git.checkout("main"));
+    EXPECT_EQ(git.current_branch(), "main");
 }
 
 TEST_F(GitOperationsTest, BranchList) {
     GitOperations git(test_repo_path);
     git.checkout("branch-a", true);
-    git.checkout("master");
+    git.checkout("main");
     auto list = git.branches();
     EXPECT_GE(list.size(), 2u);
 }
@@ -89,7 +89,7 @@ TEST_F(GitOperationsTest, BranchList) {
 TEST_F(GitOperationsTest, BranchDelete) {
     GitOperations git(test_repo_path);
     git.checkout("to-delete", true);
-    git.checkout("master");
+    git.checkout("main");
     EXPECT_TRUE(git.branch_delete("to-delete"));
 }
 
@@ -122,7 +122,7 @@ TEST_F(GitOperationsTest, Merge) {
     std::ofstream(test_repo_path + "/merged.txt") << "from branch";
     git.add();
     git.commit("branch commit");
-    git.checkout("master");
+    git.checkout("main");
     EXPECT_TRUE(git.merge("merge-branch", true));
 }
 
@@ -132,7 +132,7 @@ TEST_F(GitOperationsTest, MergeFastForward) {
     std::ofstream(test_repo_path + "/ff.txt") << "ff";
     git.add();
     git.commit("ff commit");
-    git.checkout("master");
+    git.checkout("main");
     EXPECT_TRUE(git.merge("ff-branch", false));
 }
 
@@ -150,7 +150,7 @@ TEST_F(GitOperationsTest, CherryPick) {
     git.add();
     git.commit("cherry commit");
     auto log = git.log(1);
-    git.checkout("master");
+    git.checkout("main");
 }
 
 TEST_F(GitOperationsTest, ResetSoft) {

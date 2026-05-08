@@ -68,11 +68,13 @@ public:
 
     void set_notification_handler(std::function<void(const std::string&, const json&)> handler);
 
-private:
-    void setup_routes();
+    // Internal request handlers — accessible to unit tests via FRIEND_TEST
     void handle_post(const httplib::Request& req, httplib::Response& res);
     void handle_get(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
+
+private:
+    void setup_routes();
     void send_sse_notification(const std::string& method, const json& params);
 
     std::optional<AuthToken> authenticate(const httplib::Request& req) const;

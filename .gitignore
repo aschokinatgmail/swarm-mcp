@@ -27,6 +27,7 @@ cmake-build-*/
 
 # vcpkg / package managers
 vcpkg_installed/
+vcpkg-local/
 packages/
 
 # Python venvs (for testing scripts)

@@ -10,6 +10,7 @@
 #elif defined(__APPLE__)
     #define MCP_PLATFORM_MACOS 1
     #include <mach-o/dyld.h>
+    #include <unistd.h>
 #elif defined(__linux__)
     #define MCP_PLATFORM_LINUX 1
     #include <unistd.h>

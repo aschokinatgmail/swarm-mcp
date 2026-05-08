@@ -1,0 +1,37 @@
+{
+  "server_name": "swarm-mcp",
+  "server_version": "1.0.0",
+  "swarm": {
+    "id": "default",
+    "display_name": "macOS Swarm",
+    "secret": "",
+    "open_enrollment": true,
+    "allowed_agents": [],
+    "token_ttl_seconds": 86400,
+    "heartbeat_timeout_seconds": 120
+  },
+  "mqtt": {
+    "host": "localhost",
+    "port": 1883,
+    "username": "",
+    "password": "",
+    "client_id": "",
+    "keep_alive_sec": 60,
+    "use_tls": false,
+    "ca_cert_path": ""
+  },
+  "http": {
+    "host": "127.0.0.1",
+    "port": 3001,
+    "endpoint": "/mcp",
+    "cors_origin": "",
+    "thread_pool_size": 4,
+    "require_auth": true
+  },
+  "git": {
+    "repo_path": "~",
+    "default_branch": "main",
+    "branch_prefix": "collab/",
+    "auto_commit": false
+  }
+}

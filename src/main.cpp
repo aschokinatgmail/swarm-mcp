@@ -9,6 +9,7 @@
 #include "mcp_collab/server.hpp"
 #include "mcp_collab/config.hpp"
 #include "mcp_collab/auth.hpp"
+#include "mcp_collab/keychain.hpp"
 
 static std::atomic<bool> g_running{true};
 
@@ -33,6 +34,8 @@ void print_usage(const char* prog) {
         "  --no-auth                  Disable authentication (dev mode)\n"
         "  --enroll <agent_id>        Enroll a new agent and print its token\n"
         "  --role <role>              Role for enrollment (coordinator, worker, observer)\n"
+        "  --store-secret <key>       Store secret in macOS Keychain and exit\n"
+        "  --keychain                 Read secret from macOS Keychain\n"
         "  -v, --verbose              Enable verbose logging\n"
         "  -q, --quiet                Suppress all but error logs\n"
         "  -h, --help                 Show this help\n",
@@ -50,6 +53,8 @@ int main(int argc, char* argv[]) {
     bool verbose = false;
     bool quiet = false;
     bool no_auth = false;
+    bool use_keychain = false;
+    std::string store_secret_val;
     std::string enroll_agent;
     std::string enroll_role = "worker";
 
@@ -78,6 +83,10 @@ int main(int argc, char* argv[]) {
             enroll_agent = argv[++i];
         } else if (arg == "--role" && i + 1 < argc) {
             enroll_role = argv[++i];
+        } else if (arg == "--keychain") {
+            use_keychain = true;
+        } else if (arg == "--store-secret" && i + 1 < argc) {
+            store_secret_val = argv[++i];
         } else if (arg == "-v" || arg == "--verbose") {
             verbose = true;
         } else if (arg == "-q" || arg == "--quiet") {
@@ -90,6 +99,17 @@ int main(int argc, char* argv[]) {
 
     if (verbose) spdlog::set_level(spdlog::level::debug);
     if (quiet) spdlog::set_level(spdlog::level::err);
+
+    // macOS Keychain: store secret and exit
+    if (!store_secret_val.empty()) {
+        auto swarm_id = config.swarm.id.empty() ? "default" : config.swarm.id;
+        if (mcp_collab::keychain::store_secret("swarm-mcp", swarm_id, store_secret_val)) {
+            std::cout << "Secret stored in macOS Keychain for swarm: " << swarm_id << "\n";
+            return 0;
+        }
+        spdlog::error("Failed to store secret in Keychain");
+        return 1;
+    }
 
     // Load config: file < env < CLI
     auto file_config = mcp_collab::ServerConfig::from_file(config_path);
@@ -124,6 +144,18 @@ int main(int argc, char* argv[]) {
     config.swarm.token_ttl = env_config.swarm.token_ttl.count() > 0 ? env_config.swarm.token_ttl : file_config.swarm.token_ttl;
     config.swarm.heartbeat_timeout = env_config.swarm.heartbeat_timeout.count() > 0 ? env_config.swarm.heartbeat_timeout : file_config.swarm.heartbeat_timeout;
 
+    // macOS Keychain: read secret if requested
+    if (use_keychain) {
+        auto swarm_id = config.swarm.id.empty() ? "default" : config.swarm.id;
+        auto keychain_secret = mcp_collab::keychain::get_secret("swarm-mcp", swarm_id);
+        if (keychain_secret) {
+            config.swarm.secret = *keychain_secret;
+            spdlog::info("Loaded swarm secret from macOS Keychain for swarm: {}", swarm_id);
+        } else {
+            spdlog::warn("No secret found in Keychain for swarm: {}. Falling back to other sources.", swarm_id);
+        }
+    }
+
     // Enrollment mode — issue a token and exit
     if (!enroll_agent.empty()) {
         if (config.swarm.secret.empty()) {
@@ -150,6 +182,9 @@ int main(int argc, char* argv[]) {
         config.swarm.secret = mcp_collab::AuthProvider::generate_secret(32);
         spdlog::warn("No swarm secret configured. Auto-generated a random secret for this session.");
         spdlog::warn("  Set --secret or SWARM_SECRET for persistent authentication.");
+#ifdef __APPLE__
+        spdlog::warn("  On macOS, use --store-secret <key> to persist in Keychain securely.");
+#endif
     }
 
     if (!config.http.require_auth) {

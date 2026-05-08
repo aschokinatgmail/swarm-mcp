@@ -1,0 +1,135 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "23",
+                "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "macos-arm64",
+            "displayName": "macOS (Apple Silicon, arm64)",
+            "inherits": "base",
+            "description": "Build for Apple Silicon (M1/M2/M3/M4) Macs",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            },
+            "architecture": {
+                "value": "arm64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "macos-x86_64",
+            "displayName": "macOS (Intel, x86_64)",
+            "inherits": "base",
+            "description": "Build for Intel Macs",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "x86_64",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            },
+            "architecture": {
+                "value": "x86_64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "macos-universal",
+            "displayName": "macOS (Universal Binary, arm64+x86_64)",
+            "inherits": "base",
+            "description": "Build universal binary for both Apple Silicon and Intel",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            }
+        },
+        {
+            "name": "macos-debug",
+            "displayName": "macOS (Debug, Apple Silicon)",
+            "inherits": "base",
+            "description": "Debug build for Apple Silicon",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            },
+            "architecture": {
+                "value": "arm64",
+                "strategy": "external"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "macos-arm64",
+            "configurePreset": "macos-arm64",
+            "jobs": 0
+        },
+        {
+            "name": "macos-x86_64",
+            "configurePreset": "macos-x86_64",
+            "jobs": 0
+        },
+        {
+            "name": "macos-universal",
+            "configurePreset": "macos-universal",
+            "jobs": 0
+        },
+        {
+            "name": "macos-debug",
+            "configurePreset": "macos-debug",
+            "jobs": 0
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "macos-arm64",
+            "configurePreset": "macos-arm64",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 0
+            }
+        },
+        {
+            "name": "macos-debug",
+            "configurePreset": "macos-debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "jobs": 0
+            }
+        }
+    ]
+}

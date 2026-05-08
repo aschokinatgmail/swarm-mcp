@@ -113,6 +113,7 @@ struct AuthToken {
     std::vector<std::string> scopes;   // additional fine-grained scopes
     std::chrono::system_clock::time_point issued_at{std::chrono::system_clock::now()};
     std::chrono::system_clock::time_point expires_at;
+    std::string token_string;  // Full signed token: payload.signature (populated by issue_token)
 
     bool is_expired() const {
         return std::chrono::system_clock::now() > expires_at;

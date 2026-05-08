@@ -48,24 +48,24 @@ TEST_F(MergeCoordinatorTest, RequestMerge) {
     auto branch = branch_mgr->create_branch("t1", "agent-1");
     std::ofstream(test_repo_path + "/file1.txt") << "content";
     branch_mgr->commit_changes(branch, "change", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(branch, "master", "agent-1");
+    auto id = coordinator->request_merge(branch, "main", "agent-1");
     EXPECT_FALSE(id.empty());
     auto req = coordinator->get_request(id);
     EXPECT_TRUE(req.has_value());
     EXPECT_EQ(req->status, "pending");
     EXPECT_EQ(req->source_branch, branch);
-    EXPECT_EQ(req->target_branch, "master");
+    EXPECT_EQ(req->target_branch, "main");
 }
 
 TEST_F(MergeCoordinatorTest, ApproveMerge) {
     auto branch = branch_mgr->create_branch("t2", "agent-1");
     std::ofstream(test_repo_path + "/file2.txt") << "content";
     branch_mgr->commit_changes(branch, "change", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(branch, "master", "agent-1");
+    auto id = coordinator->request_merge(branch, "main", "agent-1");
     EXPECT_TRUE(coordinator->approve_merge(id, "reviewer-1"));
     auto req = coordinator->get_request(id);
     EXPECT_EQ(req->status, "approved");
@@ -76,9 +76,9 @@ TEST_F(MergeCoordinatorTest, RejectMerge) {
     auto branch = branch_mgr->create_branch("t3", "agent-1");
     std::ofstream(test_repo_path + "/file3.txt") << "content";
     branch_mgr->commit_changes(branch, "change", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(branch, "master", "agent-1");
+    auto id = coordinator->request_merge(branch, "main", "agent-1");
     EXPECT_TRUE(coordinator->reject_merge(id, "reviewer-1", "not ready"));
     auto req = coordinator->get_request(id);
     EXPECT_EQ(req->status, "rejected");
@@ -88,9 +88,9 @@ TEST_F(MergeCoordinatorTest, ApproveAlreadyApproved) {
     auto branch = branch_mgr->create_branch("t4", "agent-1");
     std::ofstream(test_repo_path + "/file4.txt") << "c";
     branch_mgr->commit_changes(branch, "c", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(branch, "master", "agent-1");
+    auto id = coordinator->request_merge(branch, "main", "agent-1");
     EXPECT_TRUE(coordinator->approve_merge(id, "r1"));
     EXPECT_FALSE(coordinator->approve_merge(id, "r2")); // already approved
 }
@@ -99,9 +99,9 @@ TEST_F(MergeCoordinatorTest, ExecuteMerge) {
     auto branch = branch_mgr->create_branch("t5", "agent-1");
     std::ofstream(test_repo_path + "/file5.txt") << "merge me";
     branch_mgr->commit_changes(branch, "merge content", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(branch, "master", "agent-1", MergeStrategy::Squash);
+    auto id = coordinator->request_merge(branch, "main", "agent-1", MergeStrategy::Squash);
     coordinator->approve_merge(id, "r1");
     EXPECT_TRUE(coordinator->execute_merge(id));
     auto req = coordinator->get_request(id);
@@ -112,9 +112,9 @@ TEST_F(MergeCoordinatorTest, ExecuteUnapprovedFails) {
     auto branch = branch_mgr->create_branch("t6", "agent-1");
     std::ofstream(test_repo_path + "/file6.txt") << "content";
     branch_mgr->commit_changes(branch, "c", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(branch, "master", "agent-1");
+    auto id = coordinator->request_merge(branch, "main", "agent-1");
     EXPECT_FALSE(coordinator->execute_merge(id));
 }
 
@@ -122,9 +122,9 @@ TEST_F(MergeCoordinatorTest, PendingRequests) {
     auto b1 = branch_mgr->create_branch("t7", "agent-1");
     std::ofstream(test_repo_path + "/f7.txt") << "c";
     branch_mgr->commit_changes(b1, "c", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    coordinator->request_merge(b1, "master", "agent-1");
+    coordinator->request_merge(b1, "main", "agent-1");
     EXPECT_EQ(coordinator->pending_requests().size(), 1u);
 }
 
@@ -132,9 +132,9 @@ TEST_F(MergeCoordinatorTest, ListByBranch) {
     auto b1 = branch_mgr->create_branch("t8", "agent-1");
     std::ofstream(test_repo_path + "/f8.txt") << "c";
     branch_mgr->commit_changes(b1, "c", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    coordinator->request_merge(b1, "master", "agent-1");
+    coordinator->request_merge(b1, "main", "agent-1");
     auto by_branch = coordinator->list_by_branch(b1);
     EXPECT_EQ(by_branch.size(), 1u);
 }
@@ -143,9 +143,9 @@ TEST_F(MergeCoordinatorTest, ListByRequester) {
     auto b1 = branch_mgr->create_branch("t9", "agent-1");
     std::ofstream(test_repo_path + "/f9.txt") << "c";
     branch_mgr->commit_changes(b1, "c", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    coordinator->request_merge(b1, "master", "agent-x");
+    coordinator->request_merge(b1, "main", "agent-x");
     auto by_req = coordinator->list_by_requester("agent-x");
     EXPECT_EQ(by_req.size(), 1u);
 }
@@ -158,7 +158,7 @@ TEST_F(MergeCoordinatorTest, MergeRequestJsonRoundTrip) {
     MergeRequest req;
     req.id = "mr-1";
     req.source_branch = "collab/t1";
-    req.target_branch = "master";
+    req.target_branch = "main";
     req.requester = "agent-1";
     req.strategy = MergeStrategy::Squash;
     req.status = "approved";
@@ -176,9 +176,9 @@ TEST_F(MergeCoordinatorTest, Callback) {
     auto b1 = branch_mgr->create_branch("t10", "agent-1");
     std::ofstream(test_repo_path + "/f10.txt") << "c";
     branch_mgr->commit_changes(b1, "c", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
 
-    auto id = coordinator->request_merge(b1, "master", "agent-1");
+    auto id = coordinator->request_merge(b1, "main", "agent-1");
     EXPECT_EQ(last_event, "merge.requested");
 
     coordinator->approve_merge(id, "r1");

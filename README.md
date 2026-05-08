@@ -41,7 +41,9 @@ A C++23 MCP (Model Context Protocol) collaboration server for multi-agent coordi
 - **Git Workflows**: Branch-per-task model with lock/unlock, merge requests, and conflict detection
 - **RBAC Auth**: 3 roles (Coordinator, Worker, Observer) with 19 permissions, Bearer tokens
 - **Streamable HTTP**: POST for requests, GET for SSE event stream, DELETE for session teardown
-- **Cross-Platform**: Windows (MSVC), Linux (GCC/Clang), macOS (Clang)
+- **Cross-Platform**: Windows (MSVC), Linux (GCC/Clang), macOS (Clang) with native Apple Keychain support
+- **Apple Keychain**: Secure secret storage on macOS (no secrets in plain text)
+- **CMake Presets**: Ready-to-use presets for Apple Silicon, Intel, and Universal Binary builds
 
 ## Prerequisites
 
@@ -65,6 +67,109 @@ A C++23 MCP (Model Context Protocol) collaboration server for multi-agent coordi
 
 ## Build Instructions
 
+### macOS (Apple Silicon & Intel) — Recommended
+
+This project is optimized for macOS with CMake presets, Apple Keychain secret storage, and launchd service support.
+
+#### Prerequisites
+
+- **macOS 12+** (Monterey or later)
+- **Xcode Command Line Tools**: `xcode-select --install`
+- **Homebrew** (for vcpkg): `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`
+- **vcpkg**:
+  ```bash
+  git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+  ~/vcpkg/bootstrap-vcpkg.sh
+  export VCPKG_ROOT="$HOME/vcpkg"
+  ```
+- **Ninja**: `brew install ninja`
+
+#### Build with CMake Presets
+
+```bash
+# Apple Silicon (M1/M2/M3/M4)
+cmake --preset macos-arm64
+cmake --build --preset macos-arm64
+
+# Intel Mac
+cmake --preset macos-x86_64
+cmake --build --preset macos-x86_64
+
+# Universal binary (both architectures)
+cmake --preset macos-universal
+cmake --build --preset macos-universal
+
+# Debug build for development
+cmake --preset macos-debug
+cmake --build --preset macos-debug
+```
+
+#### Run Tests
+
+```bash
+cmake --build --preset macos-arm64 --target swarm_mcp_unit_tests
+ctest --preset macos-arm64
+
+# Or run directly
+./build/macos-arm64/swarm_mcp_unit_tests
+```
+
+#### Install as macOS Service (launchd)
+
+```bash
+# 1. Install binary
+sudo cp ./build/macos-arm64/swarm-mcp /usr/local/bin/
+sudo mkdir -p /usr/local/etc/swarm-mcp
+sudo cp config/macos.json /usr/local/etc/swarm-mcp/config.json
+
+# 2. Store secret securely in Keychain
+./build/macos-arm64/swarm-mcp --store-secret "my-super-secret-key"
+
+# 3. Install launchd service
+sudo cp scripts/com.swarm-mcp.server.plist /Library/LaunchDaemons/
+sudo mkdir -p /usr/local/var/log /usr/local/var/swarm-mcp
+sudo launchctl load /Library/LaunchDaemons/com.swarm-mcp.server.plist
+sudo launchctl start com.swarm-mcp.server
+
+# View logs
+ tail -f /usr/local/var/log/swarm-mcp.log
+```
+
+#### Apple Keychain Secret Storage
+
+On macOS, you can securely store the swarm secret in the system Keychain instead of passing it on the command line or in config files:
+
+```bash
+# Store a secret for the default swarm
+./swarm-mcp --store-secret "my-secret-key"
+
+# Run the server, reading secret from Keychain
+./swarm-mcp --keychain
+
+# The secret is stored per swarm ID. If you use a custom swarm ID:
+./swarm-mcp -s my-project --store-secret "project-secret"
+./swarm-mcp -s my-project --keychain
+```
+
+#### Build macOS App Bundle
+
+```bash
+# Build universal binary
+cmake --preset macos-universal
+cmake --build --preset macos-universal
+
+# Create app bundle
+mkdir -p SwarmMCP.app/Contents/MacOS
+mkdir -p SwarmMCP.app/Contents/Resources
+cp ./build/macos-universal/swarm-mcp SwarmMCP.app/Contents/MacOS/
+cp scripts/Info.plist.in SwarmMCP.app/Contents/Info.plist
+
+# Optional: sign for distribution
+# codesign --force --deep --sign "Developer ID Application: ..." SwarmMCP.app
+```
+
+---
+
 ### Windows (Visual Studio + vcpkg)
 
 ```bash
@@ -78,7 +183,7 @@ cmake --build build --config Release
 .\build\Release\swarm_mcp_unit_tests.exe
 ```
 
-### Linux / macOS
+### Linux
 
 ```bash
 # Install vcpkg (if not already)

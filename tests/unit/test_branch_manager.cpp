@@ -57,15 +57,15 @@ TEST_F(BranchManagerTest, CreateBranchInfoStored) {
 }
 
 TEST_F(BranchManagerTest, CreateBranchWithBase) {
-    auto branch = mgr->create_branch("task-3", "agent-1", "master");
+    auto branch = mgr->create_branch("task-3", "agent-1", "main");
     EXPECT_FALSE(branch.empty());
     auto info = mgr->get_branch_info(branch);
-    EXPECT_EQ(info->base_branch, "master");
+    EXPECT_EQ(info->base_branch, "main");
 }
 
 TEST_F(BranchManagerTest, LockBranch) {
     auto branch = mgr->create_branch("task-4", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
     EXPECT_TRUE(mgr->lock_branch(branch));
     auto info = mgr->get_branch_info(branch);
     EXPECT_EQ(info->state, BranchState::Locked);
@@ -73,7 +73,7 @@ TEST_F(BranchManagerTest, LockBranch) {
 
 TEST_F(BranchManagerTest, UnlockBranch) {
     auto branch = mgr->create_branch("task-5", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
     mgr->lock_branch(branch);
     EXPECT_TRUE(mgr->unlock_branch(branch));
     EXPECT_EQ(mgr->get_branch_info(branch)->state, BranchState::Active);
@@ -81,14 +81,14 @@ TEST_F(BranchManagerTest, UnlockBranch) {
 
 TEST_F(BranchManagerTest, MarkMerged) {
     auto branch = mgr->create_branch("task-6", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
     EXPECT_TRUE(mgr->mark_merged(branch));
     EXPECT_EQ(mgr->get_branch_info(branch)->state, BranchState::Merged);
 }
 
 TEST_F(BranchManagerTest, MarkAbandoned) {
     auto branch = mgr->create_branch("task-7", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
     EXPECT_TRUE(mgr->mark_abandoned(branch));
     EXPECT_EQ(mgr->get_branch_info(branch)->state, BranchState::Abandoned);
 }
@@ -96,7 +96,7 @@ TEST_F(BranchManagerTest, MarkAbandoned) {
 TEST_F(BranchManagerTest, ListActive) {
     mgr->create_branch("task-8", "agent-1");
     auto branch2 = mgr->create_branch("task-9", "agent-1");
-    git->checkout("master");
+    git->checkout("main");
     mgr->mark_abandoned(branch2);
     auto active = mgr->list_active();
     EXPECT_EQ(active.size(), 1u);

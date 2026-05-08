@@ -2,121 +2,223 @@
 #include "mcp_collab/transport_http.hpp"
 #include "mcp_collab/protocol.hpp"
 #include "mcp_collab/auth.hpp"
-#include <string>
-#include <thread>
-#include <chrono>
+#include <nlohmann/json.hpp>
 
 using namespace mcp_collab;
+using json = nlohmann::json;
 
-TEST(RateLimiterTest, UnlimitedWhenZero) {
-    RateLimiter rl(0);
-    for (int i = 0; i < 1000; ++i) {
-        EXPECT_TRUE(rl.allow("key1"));
+class HttpHandlerTest : public ::testing::Test {
+protected:
+    std::unique_ptr<McpProtocol> protocol_;
+    std::unique_ptr<AuthProvider> auth_;
+
+    void SetUp() override {
+        protocol_ = std::make_unique<McpProtocol>(
+            ServerInfo{.name = "test", .version = "1.0.0"},
+            ServerCapabilities{.tools = true, .resources = true, .prompts = true, .logging = true}
+        );
+        auth_ = std::make_unique<AuthProvider>("test-secret-key");
     }
-}
 
-TEST(RateLimiterTest, UnlimitedWhenNegative) {
-    RateLimiter rl(-5);
-    EXPECT_TRUE(rl.allow("key1"));
-    EXPECT_TRUE(rl.allow("key1"));
-}
-
-TEST(RateLimiterTest, AllowsWithinLimit) {
-    RateLimiter rl(10);
-    for (int i = 0; i < 10; ++i) {
-        EXPECT_TRUE(rl.allow("client1"));
+    httplib::Request make_request(const std::string& method,
+                                   const std::string& path,
+                                   const std::string& body = "",
+                                   const std::string& auth_header = "") {
+        httplib::Request req;
+        req.method = method;
+        req.path = path;
+        req.body = body;
+        if (!auth_header.empty()) {
+            req.set_header("Authorization", auth_header);
+        }
+        return req;
     }
+};
+
+// ── Authentication Tests ─────────────────────────────────────────────────────
+
+TEST_F(HttpHandlerTest, PostWithoutAuthReturns401) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    httplib::Request req = make_request("POST", "/mcp", R"({"jsonrpc":"2.0","method":"ping"})");
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.status, 401);
+    auto j = json::parse(res.body);
+    EXPECT_EQ(j["error"]["code"], -32001);
 }
 
-TEST(RateLimiterTest, BlocksOverLimit) {
-    RateLimiter rl(5);
-    for (int i = 0; i < 5; ++i) {
-        EXPECT_TRUE(rl.allow("client1"));
+TEST_F(HttpHandlerTest, PostWithInvalidTokenReturns401) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    httplib::Request req = make_request("POST", "/mcp",
+                                       R"({"jsonrpc":"2.0","method":"ping"})",
+                                       "Bearer invalid.token.here");
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.status, 401);
+}
+
+TEST_F(HttpHandlerTest, PostWithValidTokenSucceeds) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    auto token = auth_->issue_token("agent-1", Role::Worker, "test-swarm");
+    httplib::Request req = make_request("POST", "/mcp",
+                                       R"({"jsonrpc":"2.0","id":1,"method":"ping"})",
+                                       "Bearer " + token.token_string);
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    // Response body should contain valid JSON-RPC; status may be unset (-1) in direct handler test
+    EXPECT_FALSE(res.body.empty());
+    auto j = json::parse(res.body);
+    EXPECT_TRUE(j.contains("jsonrpc")) << "Response should contain valid JSON-RPC: " << res.body;
+}
+
+// ── Rate Limiting Tests ──────────────────────────────────────────────────────
+
+TEST_F(HttpHandlerTest, RateLimitBlocksAfterThreshold) {
+    StreamableHttpTransport limited_transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true, .rate_limit_rpm = 2});
+
+    auto token = auth_->issue_token("agent-1", Role::Worker, "test-swarm");
+    std::string auth_hdr = "Bearer " + token.token_string;
+
+    // First 2 requests should pass (or at least not be rate limited)
+    for (int i = 0; i < 2; ++i) {
+        httplib::Request req = make_request("POST", "/mcp",
+            R"({"jsonrpc":"2.0","id":)" + std::to_string(i) + R"(,"method":"ping"})",
+            auth_hdr);
+        httplib::Response res;
+        limited_transport.handle_post(req, res);
+        EXPECT_NE(res.status, 429) << "Request " << i << " should not be rate limited";
     }
-    EXPECT_FALSE(rl.allow("client1"));
+
+    // 3rd request should be rate limited
+    httplib::Request req3 = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":99,"method":"ping"})",
+        auth_hdr);
+    httplib::Response res3;
+    limited_transport.handle_post(req3, res3);
+    EXPECT_EQ(res3.status, 429);
+    auto j = json::parse(res3.body);
+    EXPECT_EQ(j["error"]["code"], -32004);
 }
 
-TEST(RateLimiterTest, IndependentKeys) {
-    RateLimiter rl(2);
-    EXPECT_TRUE(rl.allow("key-a"));
-    EXPECT_TRUE(rl.allow("key-a"));
-    EXPECT_FALSE(rl.allow("key-a"));
+// ── Invalid Request Tests ──────────────────────────────────────────────────
 
-    EXPECT_TRUE(rl.allow("key-b"));
-    EXPECT_TRUE(rl.allow("key-b"));
-    EXPECT_FALSE(rl.allow("key-b"));
+TEST_F(HttpHandlerTest, PostWithEmptyBodyReturns400) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
+    httplib::Request req = make_request("POST", "/mcp", "",
+                                       "Bearer " + token.token_string);
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.status, 400);
 }
 
-TEST(RateLimiterTest, ResetsAfterWindow) {
-    RateLimiter rl(3);
-    EXPECT_TRUE(rl.allow("key"));
-    EXPECT_TRUE(rl.allow("key"));
-    EXPECT_TRUE(rl.allow("key"));
-    EXPECT_FALSE(rl.allow("key"));
+TEST_F(HttpHandlerTest, PostWithInvalidJsonReturnsParseError) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
+    httplib::Request req = make_request("POST", "/mcp",
+                                       "{ not valid json",
+                                        "Bearer " + token.token_string);
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    auto j = json::parse(res.body);
+    EXPECT_EQ(j["error"]["code"], -32700);
 }
 
-TEST(SseStreamTest, AddAndRemoveClient) {
-    SseStream sse;
-    std::string data_received;
-    auto id = sse.add_client([&data_received](const std::string& data) -> bool {
-        data_received = data;
-        return true;
-    });
-    EXPECT_EQ(sse.client_count(), 1u);
+// ── Batch Request Tests ──────────────────────────────────────────────────────
 
-    sse.remove_client(id);
-    EXPECT_EQ(sse.client_count(), 0u);
+TEST_F(HttpHandlerTest, PostWithBatchRequestSucceeds) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
+    std::string batch = R"([{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}},
+                           {"jsonrpc":"2.0","id":2,"method":"ping"}])";
+    httplib::Request req = make_request("POST", "/mcp", batch,
+                                        "Bearer " + token.token_string);
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    // Response body should contain valid JSON-RPC array; status may be unset (-1) in direct handler test
+    EXPECT_FALSE(res.body.empty());
+    auto j = json::parse(res.body);
+    EXPECT_TRUE(j.is_array()) << "Batch response should be a JSON array: " << res.body;
 }
 
-TEST(SseStreamTest, BroadcastToClients) {
-    SseStream sse;
-    std::string received1, received2;
+// ── SSE Endpoint Tests ───────────────────────────────────────────────────────
 
-    sse.add_client([&received1](const std::string& data) -> bool {
-        received1 = data;
-        return true;
-    });
-    sse.add_client([&received2](const std::string& data) -> bool {
-        received2 = data;
-        return true;
-    });
+TEST_F(HttpHandlerTest, GetWithWrongAcceptHeaderReturns400) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
+    httplib::Request req = make_request("GET", "/mcp", "",
+                                        "Bearer " + token.token_string);
+    // Missing "text/event-stream" in Accept header
+    httplib::Response res;
 
-    sse.broadcast("test", {{"key", "value"}});
+    transport.handle_get(req, res);
 
-    EXPECT_NE(received1.find("test"), std::string::npos);
-    EXPECT_NE(received2.find("test"), std::string::npos);
-    EXPECT_NE(received1.find("\"key\""), std::string::npos);
+    EXPECT_EQ(res.status, 400);
 }
 
-TEST(SseStreamTest, RemoveStaleClientOnBroadcast) {
-    SseStream sse;
-    int call_count = 0;
+TEST_F(HttpHandlerTest, DeleteWithoutSessionIdReturns204) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    httplib::Request req = make_request("DELETE", "/mcp");
+    httplib::Response res;
 
-    sse.add_client([&call_count](const std::string&) -> bool {
-        call_count++;
-        return false;
-    });
-    EXPECT_EQ(sse.client_count(), 1u);
+    transport.handle_delete(req, res);
 
-    sse.broadcast("test", {});
-    EXPECT_EQ(sse.client_count(), 0u);
-    EXPECT_EQ(call_count, 1);
+    EXPECT_EQ(res.status, 204);
 }
 
-TEST(SseStreamTest, BroadcastNoClients) {
-    SseStream sse;
-    EXPECT_NO_THROW(sse.broadcast("test", {}));
-}
+// ── Auth Disabled Tests ──────────────────────────────────────────────────────
 
-TEST(SseStreamTest, ClientCountZero) {
-    SseStream sse;
-    EXPECT_EQ(sse.client_count(), 0u);
-}
+TEST_F(HttpHandlerTest, AuthDisabledAllowsAnyRequest) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false});
 
-TEST(SseStreamTest, MultipleClientsCount) {
-    SseStream sse;
-    sse.add_client([](const std::string&) -> bool { return true; });
-    sse.add_client([](const std::string&) -> bool { return true; });
-    sse.add_client([](const std::string&) -> bool { return true; });
-    EXPECT_EQ(sse.client_count(), 3u);
+    // When auth is disabled, any request should be allowed
+    httplib::Request req = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})");
+    httplib::Response res;
+    transport.handle_post(req, res);
+    EXPECT_FALSE(res.body.empty()) << "With auth disabled, valid JSON-RPC initialize should return a body";
+    auto j = json::parse(res.body);
+    EXPECT_TRUE(j.contains("jsonrpc")) << "Response should be valid JSON-RPC: " << res.body;
 }

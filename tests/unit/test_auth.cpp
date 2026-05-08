@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "mcp_collab/auth.hpp"
 #include <chrono>
+#include <thread>
 
 using namespace mcp_collab;
 
@@ -89,20 +90,45 @@ TEST_F(AuthTest, ValidateTokenRoundTrip) {
     EXPECT_EQ(token.role, Role::Coordinator);
     EXPECT_EQ(token.swarm_id, "swarm-42");
     EXPECT_FALSE(token.is_expired());
+
+    // Validate using the full token_string (includes signature)
+    auto validated = provider->validate_token(token.token_string);
+    EXPECT_TRUE(validated.has_value());
+    EXPECT_EQ(validated->agent_id, "agent-2");
+    EXPECT_EQ(validated->role, Role::Coordinator);
 }
 
-TEST_F(AuthTest, TokenExpiry) {
+TEST_F(AuthTest, ValidateTamperedTokenFails) {
+    auto token = provider->issue_token("agent-2", Role::Coordinator, "swarm-42");
+    std::string tampered = token.token_string + "X";
+    auto validated = provider->validate_token(tampered);
+    EXPECT_FALSE(validated.has_value());
+}
+
+TEST_F(AuthTest, ValidateExpiredTokenFails) {
     auto token = provider->issue_token("agent-3", Role::Observer, "test-swarm", std::chrono::seconds(0));
     // Token with 0-second TTL should be expired immediately or very soon
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     EXPECT_TRUE(token.is_expired());
+
+    auto validated = provider->validate_token(token.token_string);
+    EXPECT_FALSE(validated.has_value());
 }
 
-TEST_F(AuthTest, RevokeToken) {
+TEST_F(AuthTest, ValidateForgedSignatureFails) {
+    auto token = provider->issue_token("agent-fake", Role::Worker, "test-swarm");
+    // Create a forged token with same payload but different signature
+    std::string forged = token.token_string.substr(0, token.token_string.rfind('.') + 1) + "deadbeef";
+    auto validated = provider->validate_token(forged);
+    EXPECT_FALSE(validated.has_value());
+}
+
+TEST_F(AuthTest, RevokeTokenPreventsValidation) {
     auto token = provider->issue_token("agent-4", Role::Worker, "test-swarm");
     EXPECT_TRUE(provider->revoke_token(token.token_id));
     // After revocation, the token should no longer validate
-    // (Direct validation requires the token string; the token_id-based revocation works)
+    auto validated = provider->validate_token(token.token_string);
+    EXPECT_FALSE(validated.has_value());
 }
 
 TEST_F(AuthTest, ExtractBearerToken) {

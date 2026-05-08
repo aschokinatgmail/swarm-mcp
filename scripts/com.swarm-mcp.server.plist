@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.swarm-mcp.server</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/swarm-mcp</string>
+        <string>-c</string>
+        <string>/usr/local/etc/swarm-mcp/config.json</string>
+        <string>--keychain</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/swarm-mcp.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/swarm-mcp.error.log</string>
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/swarm-mcp</string>
+</dict>
+</plist>

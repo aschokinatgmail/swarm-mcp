@@ -92,6 +92,8 @@ AuthToken AuthProvider::issue_token(const std::string& agent_id, Role role,
     std::string signature = sign(payload, swarm_secret_);
     std::string token_str = std::format("{}.{}", payload, signature);
 
+    token.token_string = token_str;
+
     {
         std::unique_lock lock(tokens_mutex_);
         active_tokens_[token_str] = token;

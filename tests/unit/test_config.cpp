@@ -111,6 +111,7 @@ TEST_F(ConfigTest, FromFilePartialOverride) {
 }
 
 TEST_F(ConfigTest, FromEnv) {
+#ifdef _WIN32
     // Set some env vars
     _putenv_s("SWARM_ID", "env-swarm");
     _putenv_s("SWARM_SECRET", "env-secret");
@@ -130,4 +131,25 @@ TEST_F(ConfigTest, FromEnv) {
     _putenv_s("SWARM_HTTP_PORT", "");
     _putenv_s("SWARM_HTTP_AUTH", "");
     _putenv_s("SWARM_TOKEN_TTL", "");
+#else
+    // Set some env vars using setenv
+    setenv("SWARM_ID", "env-swarm", 1);
+    setenv("SWARM_SECRET", "env-secret", 1);
+    setenv("SWARM_HTTP_PORT", "9999", 1);
+    setenv("SWARM_HTTP_AUTH", "true", 1);
+    setenv("SWARM_TOKEN_TTL", "7200", 1);
+
+    auto cfg = ServerConfig::from_env();
+    EXPECT_EQ(cfg.swarm.id, "env-swarm");
+    EXPECT_EQ(cfg.swarm.secret, "env-secret");
+    EXPECT_EQ(cfg.http.port, 9999);
+    EXPECT_EQ(cfg.http.require_auth, true);
+    EXPECT_EQ(cfg.swarm.token_ttl.count(), 7200);
+
+    unsetenv("SWARM_ID");
+    unsetenv("SWARM_SECRET");
+    unsetenv("SWARM_HTTP_PORT");
+    unsetenv("SWARM_HTTP_AUTH");
+    unsetenv("SWARM_TOKEN_TTL");
+#endif
 }

@@ -5,6 +5,14 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(ENABLE_COVERAGE "Enable code coverage reporting (GCC/Clang only)" OFF)
+
+if(ENABLE_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    message(STATUS "Code coverage enabled")
+    add_compile_options(--coverage -O0 -g)
+    add_link_options(--coverage)
+endif()
+
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(eclipse-paho-mqtt-c CONFIG REQUIRED)
@@ -33,13 +41,13 @@ add_executable(swarm-mcp
     src/util/auth.cpp
     src/util/config.cpp
     src/util/persistence.cpp
+    src/util/keychain.cpp
 )
 
 target_link_libraries(swarm-mcp PRIVATE
     fmt::fmt
     nlohmann_json::nlohmann_json
-    eclipse-paho-mqtt-c::paho-mqtt3a
-    eclipse-paho-mqtt-c::paho-mqtt3as
+    eclipse-paho-mqtt-c::paho-mqtt3as-static
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
@@ -100,13 +108,13 @@ add_library(swarm_mcp_lib STATIC
     src/util/auth.cpp
     src/util/config.cpp
     src/util/persistence.cpp
+    src/util/keychain.cpp
 )
 
 target_link_libraries(swarm_mcp_lib PUBLIC
     fmt::fmt
     nlohmann_json::nlohmann_json
-    eclipse-paho-mqtt-c::paho-mqtt3a
-    eclipse-paho-mqtt-c::paho-mqtt3as
+    eclipse-paho-mqtt-c::paho-mqtt3as-static
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
@@ -163,6 +171,7 @@ add_executable(swarm_mcp_unit_tests
     tests/unit/test_channel.cpp
     tests/unit/test_persistence.cpp
     tests/unit/test_http_handler.cpp
+    tests/unit/test_keychain.cpp
 )
 
 target_link_libraries(swarm_mcp_unit_tests PRIVATE swarm_mcp_lib GTest::gtest GTest::gtest_main)
