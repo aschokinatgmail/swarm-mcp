@@ -93,6 +93,10 @@ public:
     using NotificationCallback = std::function<void(const std::string& method, const json& params)>;
     void on_notification(NotificationCallback cb);
 
+    const std::unordered_map<std::string, McpToolDef>& tool_definitions() const { return tools_; }
+    const std::unordered_map<std::string, McpResourceDef>& resource_definitions() const { return resources_; }
+    const std::unordered_map<std::string, McpPromptDef>& prompt_definitions() const { return prompts_; }
+
 private:
     McpRequest parse_request(const json& req) const;
     json make_error_response(const McpRequest& req, int code, const std::string& message, const json& data = {}) const;

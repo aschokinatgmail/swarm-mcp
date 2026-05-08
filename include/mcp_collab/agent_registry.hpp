@@ -29,13 +29,36 @@ struct AgentInfo {
     std::string name;
     std::string platform;
     std::string hostname;
-    std::string swarm_id;                       // which swarm this agent belongs to
-    Role role{Role::Worker};                     // agent's authorization role
+    std::string swarm_id;
+    Role role{Role::Worker};
     std::vector<std::string> capabilities;
     AgentStatus status{AgentStatus::Offline};
     std::chrono::system_clock::time_point registered_at{std::chrono::system_clock::now()};
     std::chrono::system_clock::time_point last_heartbeat{std::chrono::system_clock::now()};
     json metadata;
+
+    struct ModelInfo {
+        std::string provider;
+        std::string model_id;
+        std::string model_family;
+        int context_window{0};
+        int max_output_tokens{0};
+        json to_json() const;
+        static ModelInfo from_json(const json& j);
+    };
+    ModelInfo model;
+
+    struct EnvironmentInfo {
+        std::string runtime;
+        std::string os;
+        int cpu_cores{0};
+        int memory_mb{0};
+        std::string gpu;
+        std::vector<std::string> supported_languages;
+        json to_json() const;
+        static EnvironmentInfo from_json(const json& j);
+    };
+    EnvironmentInfo environment;
 
     json to_json() const;
     static AgentInfo from_json(const json& j);

@@ -233,6 +233,7 @@ json McpProtocol::handle_tools_list(const McpRequest& req) {
     int i = 0;
     int count = 0;
     for (const auto& [name, def] : tools_) {
+        if (!has_permission(req.auth_role, def.required_permission)) continue;
         if (i < cursor) { i++; continue; }
         if (count >= limit) break;
         json t = {
@@ -293,6 +294,7 @@ json McpProtocol::handle_resources_list(const McpRequest& req) {
     int i = 0;
     int count = 0;
     for (const auto& [uri, def] : resources_) {
+        if (!has_permission(req.auth_role, def.required_permission)) continue;
         if (i < cursor) { i++; continue; }
         if (count >= limit) break;
         res.push_back({

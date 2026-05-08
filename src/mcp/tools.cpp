@@ -150,14 +150,16 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
 
     proto.register_tool({
         .name = "agent_register",
-        .description = "Register a new agent in the collaboration swarm",
+        .description = "Register a new agent in the collaboration swarm with optional model and environment introspection",
         .input_schema = {
             {"type", "object"},
             {"properties", {
                 {"name", {{"type", "string"}}},
                 {"platform", {{"type", "string"}}},
                 {"capabilities", {{"type", "array"}, {"items", {{"type", "string"}}}}},
-                {"metadata", {{"type", "object"}}},
+                {"metadata", {{"type", "object"}, {"description", "Optional metadata including model and environment info"}}},
+                {"model", {{"type", "object"}, {"description", "Model introspection: provider, model_id, model_family, context_window, max_output_tokens"}}},
+                {"environment", {{"type", "object"}, {"description", "Environment info: runtime, os, cpu_cores, memory_mb, gpu, supported_languages"}}},
             }},
             {"required", json::array({"name"})},
         },
@@ -169,6 +171,12 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         info.platform = args.value("platform", "");
         info.capabilities = args.value("capabilities", std::vector<std::string>{});
         info.metadata = args.value("metadata", json::object());
+        if (args.contains("model") && args["model"].is_object()) {
+            info.model = AgentInfo::ModelInfo::from_json(args["model"]);
+        }
+        if (args.contains("environment") && args["environment"].is_object()) {
+            info.environment = AgentInfo::EnvironmentInfo::from_json(args["environment"]);
+        }
         auto id = agents.register_agent(info, token);
         if (id.empty()) {
             return {{"success", false}, {"error", "Registration denied — swarm mismatch or auth failure"}};
@@ -503,6 +511,33 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         auto agent_id = args.value("agent_id", "");
         if (agents.heartbeat(agent_id)) return {{"success", true}, {"agent_id", agent_id}};
         return {{"success", false}, {"error", "Agent not found"}};
+    });
+
+    proto.register_tool({
+        .name = "agent_describe",
+        .description = "Get detailed introspection of an agent including model info, environment, capabilities, and effective server-side permissions",
+        .input_schema = {
+            {"type", "object"},
+            {"properties", {{"agent_id", {{"type", "string"}}}}},
+            {"required", json::array({"agent_id"})},
+        },
+        .required_permission = Permission::AgentRead,
+    }, [&](const json& args) -> json {
+        auto agent_id = args.value("agent_id", "");
+        auto agent = agents.get_agent(agent_id);
+        if (!agent) return json{{"error", "Agent not found"}, {"agent_id", agent_id}};
+
+        json result = agent->to_json();
+
+        json effective_tools = json::array();
+        for (const auto& [name, def] : proto.tool_definitions()) {
+            if (has_permission(agent->role, def.required_permission)) {
+                effective_tools.push_back(name);
+            }
+        }
+        result["effective_tools"] = effective_tools;
+        result["effective_permissions"] = role_permissions(agent->role);
+        return result;
     });
 }
 

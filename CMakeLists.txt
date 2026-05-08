@@ -157,6 +157,12 @@ add_executable(swarm_mcp_unit_tests
     tests/unit/test_secure_mqtt.cpp
     tests/unit/test_protocol.cpp
     tests/unit/test_config.cpp
+    tests/unit/test_mcp_tools.cpp
+    tests/unit/test_mcp_resources.cpp
+    tests/unit/test_mcp_prompts.cpp
+    tests/unit/test_channel.cpp
+    tests/unit/test_persistence.cpp
+    tests/unit/test_http_handler.cpp
 )
 
 target_link_libraries(swarm_mcp_unit_tests PRIVATE swarm_mcp_lib GTest::gtest GTest::gtest_main)

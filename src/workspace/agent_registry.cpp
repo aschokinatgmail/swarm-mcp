@@ -6,8 +6,52 @@
 
 namespace mcp_collab {
 
+json AgentInfo::ModelInfo::to_json() const {
+    json j = {
+        {"provider", provider},
+        {"model_id", model_id},
+        {"model_family", model_family},
+    };
+    if (context_window > 0) j["context_window"] = context_window;
+    if (max_output_tokens > 0) j["max_output_tokens"] = max_output_tokens;
+    return j;
+}
+
+AgentInfo::ModelInfo AgentInfo::ModelInfo::from_json(const json& j) {
+    ModelInfo m;
+    m.provider = j.value("provider", "");
+    m.model_id = j.value("model_id", "");
+    m.model_family = j.value("model_family", "");
+    m.context_window = j.value("context_window", 0);
+    m.max_output_tokens = j.value("max_output_tokens", 0);
+    return m;
+}
+
+json AgentInfo::EnvironmentInfo::to_json() const {
+    json j = {
+        {"runtime", runtime},
+        {"os", os},
+    };
+    if (cpu_cores > 0) j["cpu_cores"] = cpu_cores;
+    if (memory_mb > 0) j["memory_mb"] = memory_mb;
+    if (!gpu.empty()) j["gpu"] = gpu;
+    if (!supported_languages.empty()) j["supported_languages"] = supported_languages;
+    return j;
+}
+
+AgentInfo::EnvironmentInfo AgentInfo::EnvironmentInfo::from_json(const json& j) {
+    EnvironmentInfo e;
+    e.runtime = j.value("runtime", "");
+    e.os = j.value("os", "");
+    e.cpu_cores = j.value("cpu_cores", 0);
+    e.memory_mb = j.value("memory_mb", 0);
+    e.gpu = j.value("gpu", "");
+    e.supported_languages = j.value("supported_languages", std::vector<std::string>{});
+    return e;
+}
+
 json AgentInfo::to_json() const {
-    return {
+    json j = {
         {"id", id},
         {"name", name},
         {"platform", platform},
@@ -23,7 +67,10 @@ json AgentInfo::to_json() const {
         {"last_heartbeat", std::chrono::duration_cast<std::chrono::milliseconds>(
             last_heartbeat.time_since_epoch()).count()},
         {"metadata", metadata},
+        {"model", model.to_json()},
+        {"environment", environment.to_json()},
     };
+    return j;
 }
 
 AgentInfo AgentInfo::from_json(const json& j) {
@@ -45,6 +92,8 @@ AgentInfo AgentInfo::from_json(const json& j) {
     auto ts2 = j.value("last_heartbeat", 0LL);
     a.last_heartbeat = std::chrono::system_clock::time_point{} + std::chrono::milliseconds(ts2);
     a.metadata = j.value("metadata", json::object());
+    if (j.contains("model") && j["model"].is_object()) a.model = ModelInfo::from_json(j["model"]);
+    if (j.contains("environment") && j["environment"].is_object()) a.environment = EnvironmentInfo::from_json(j["environment"]);
     return a;
 }
 
@@ -82,6 +131,13 @@ std::string AgentRegistry::register_agent(const AgentInfo& info, const AuthToken
     agent.registered_at = std::chrono::system_clock::now();
     agent.last_heartbeat = std::chrono::system_clock::now();
     agent.status = AgentStatus::Online;
+
+    if (agent.metadata.contains("model") && agent.metadata["model"].is_object()) {
+        agent.model = AgentInfo::ModelInfo::from_json(agent.metadata["model"]);
+    }
+    if (agent.metadata.contains("environment") && agent.metadata["environment"].is_object()) {
+        agent.environment = AgentInfo::EnvironmentInfo::from_json(agent.metadata["environment"]);
+    }
 
     agents_[agent.id] = agent;
     lock.unlock();
