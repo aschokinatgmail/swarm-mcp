@@ -21,6 +21,7 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Darwin"
             },
+            "binaryDir": "${sourceDir}/build/macos-arm64",
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
                 "CMAKE_BUILD_TYPE": "Release",
