@@ -2,6 +2,39 @@
 #include "mcp_collab/auth.hpp"
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <string>
+#include <vector>
+
+namespace {
+
+bool topic_matches(const std::string& filter, const std::string& topic) {
+    if (filter.find('+') == std::string::npos) return false;
+
+    auto split = [](const std::string& s) -> std::vector<std::string> {
+        std::vector<std::string> parts;
+        size_t pos = 0, end;
+        while ((end = s.find('/', pos)) != std::string::npos) {
+            parts.push_back(s.substr(pos, end - pos));
+            pos = end + 1;
+        }
+        parts.push_back(s.substr(pos));
+        return parts;
+    };
+
+    auto filter_parts = split(filter);
+    auto topic_parts  = split(topic);
+
+    size_t fi = 0, ti = 0;
+    while (fi < filter_parts.size() && ti < topic_parts.size()) {
+        if (filter_parts[fi] == "#") return true;
+        if (filter_parts[fi] != "+" && filter_parts[fi] != topic_parts[ti]) return false;
+        ++fi; ++ti;
+    }
+
+    return fi == filter_parts.size() && ti == topic_parts.size();
+}
+
+}
 
 namespace mcp_collab {
 
@@ -276,7 +309,8 @@ void SecureMqttClient::on_raw_message(const MqttMessage& msg) {
     std::shared_lock lock(cb_mutex_);
     for (const auto& [pattern, cb] : verified_callbacks_) {
         if (pattern == msg.topic || pattern == "#" ||
-            (pattern.ends_with("/#") && msg.topic.starts_with(pattern.substr(0, pattern.size() - 2)))) {
+            (pattern.ends_with("/#") && msg.topic.starts_with(pattern.substr(0, pattern.size() - 2))) ||
+            topic_matches(pattern, msg.topic)) {
             cb(*envelope);
             return;
         }

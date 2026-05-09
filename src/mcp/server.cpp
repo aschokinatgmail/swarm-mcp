@@ -104,6 +104,7 @@ void SwarmServer::setup_mqtt_bridges() {
     server_token.agent_id = "swarm-mcp-server";
     server_token.role = Role::Coordinator;
     server_token.swarm_id = config_.swarm.id.empty() ? "default" : config_.swarm.id;
+    server_token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(87600);
 
     auto& task_channel = channels_.get(ChannelType::TaskUpdates);
     task_channel.on_message([this](const MqttEnvelope& env) {
@@ -144,6 +145,7 @@ void SwarmServer::heartbeat_loop() {
     server_token.agent_id = "swarm-mcp-server";
     server_token.role = Role::Coordinator;
     server_token.swarm_id = config_.swarm.id.empty() ? "default" : config_.swarm.id;
+    server_token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(87600);
 
     while (running_.load()) {
         std::this_thread::sleep_for(std::chrono::seconds(30));

@@ -319,4 +319,8 @@ void TaskManager::notify(const std::string& event, const Task& task) {
     if (callback_) callback_(event, task);
 }
 
+std::string TaskManager::find_available_assignee() const {
+    return "";
+}
+
 }

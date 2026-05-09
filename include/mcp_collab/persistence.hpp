@@ -4,6 +4,8 @@
 #include <functional>
 #include <chrono>
 #include <optional>
+#include <atomic>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -40,7 +42,8 @@ public:
 private:
     std::string path_;
     std::chrono::seconds auto_save_interval_{300};
-    bool auto_save_active_{false};
+    std::atomic<bool> auto_save_active_{false};
+    std::thread auto_save_thread_;
     json last_saved_;
 };
 

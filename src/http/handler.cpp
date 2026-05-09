@@ -124,8 +124,8 @@ std::optional<AuthToken> StreamableHttpTransport::authenticate(const httplib::Re
             AuthToken t;
             t.token_id = "anonymous";
             t.agent_id = "anonymous";
-            t.role = Role::Observer;
-            t.swarm_id = "";
+      t.role = Role::Coordinator;
+      t.swarm_id = "default";
             t.expires_at = std::chrono::system_clock::now() + std::chrono::hours(87600);
             return t;
         }();
@@ -246,11 +246,22 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
         return;
     }
 
-    auto client_id = generate_uuid();
     auto queue = std::make_shared<std::queue<std::string>>();
     auto queue_mutex = std::make_shared<std::mutex>();
     auto queue_cv = std::make_shared<std::condition_variable>();
     auto disconnected = std::make_shared<std::atomic<bool>>(false);
+
+    auto sink_fn = [queue, queue_mutex, queue_cv, disconnected](const std::string& data) -> bool {
+        if (disconnected->load()) return false;
+        {
+            std::lock_guard lock(*queue_mutex);
+            queue->push(data);
+        }
+        queue_cv->notify_one();
+        return true;
+    };
+
+    auto client_id = sse_.add_client(std::move(sink_fn));
 
     res.set_chunked_content_provider(
         "text/event-stream",
@@ -283,17 +294,6 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
             sse_.remove_client(client_id);
         });
 
-    auto sink_fn = [queue, queue_mutex, queue_cv, disconnected](const std::string& data) -> bool {
-        if (disconnected->load()) return false;
-        {
-            std::lock_guard lock(*queue_mutex);
-            queue->push(data);
-        }
-        queue_cv->notify_one();
-        return true;
-    };
-
-    sse_.add_client(std::move(sink_fn));
     spdlog::info("SSE client connected: {} agent={} role={}", client_id, token->agent_id, role_to_str(token->role));
 }
 

@@ -100,7 +100,7 @@ void PersistenceLayer::enable_auto_save(std::function<Snapshot()> snapshot_fn) {
     if (auto_save_active_) disable_auto_save();
     auto_save_active_ = true;
 
-    std::thread([this, fn = std::move(snapshot_fn)]() {
+    auto_save_thread_ = std::thread([this, fn = std::move(snapshot_fn)]() {
         while (auto_save_active_) {
             std::this_thread::sleep_for(auto_save_interval_);
             if (!auto_save_active_) break;
@@ -111,11 +111,14 @@ void PersistenceLayer::enable_auto_save(std::function<Snapshot()> snapshot_fn) {
                 spdlog::error("Auto-save error: {}", e.what());
             }
         }
-    }).detach();
+    });
 }
 
 void PersistenceLayer::disable_auto_save() {
     auto_save_active_ = false;
+    if (auto_save_thread_.joinable()) {
+        auto_save_thread_.join();
+    }
 }
 
 PersistenceLayer::Snapshot PersistenceLayer::create_snapshot(

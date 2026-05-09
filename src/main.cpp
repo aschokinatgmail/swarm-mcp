@@ -129,20 +129,32 @@ int main(int argc, char* argv[]) {
         // Otherwise env > file
         return env_val ? env_val : (file_val ? file_val : builtin_default);
     };
+    // Duration fields (std::chrono::seconds) carry struct defaults when unset by env/file.
+    // We detect "was it set?" by comparing against the SwarmConfig struct default value.
+    auto pick_duration = [](std::chrono::seconds env_val, std::chrono::seconds env_default,
+                             std::chrono::seconds file_val, std::chrono::seconds builtin_default) {
+        if (env_val != env_default) return env_val;       // env explicitly set
+        return file_val != env_default ? file_val : builtin_default; // file or builtin
+    };
 
     config.server_name = pick_str(config.server_name, env_config.server_name, file_config.server_name, "swarm-mcp");
     config.swarm.id = pick_str(config.swarm.id, env_config.swarm.id, file_config.swarm.id, "");
     config.swarm.secret = pick_str(config.swarm.secret, env_config.swarm.secret, file_config.swarm.secret, "");
     config.mqtt.host = pick_str(config.mqtt.host, env_config.mqtt.host, file_config.mqtt.host, "localhost");
-    config.mqtt.port = pick_uint(config.http.port, 3001, env_config.mqtt.port, file_config.mqtt.port, 1883);
+    config.mqtt.port = pick_uint(config.mqtt.port, 1883, env_config.mqtt.port, file_config.mqtt.port, 1883);
     config.http.host = pick_str(config.http.host, env_config.http.host, file_config.http.host, "0.0.0.0");
     config.http.port = pick_uint(config.http.port, 3001, env_config.http.port, file_config.http.port, 3001);
     config.http.endpoint = pick_str(config.http.endpoint, env_config.http.endpoint, file_config.http.endpoint, "/mcp");
     config.git.repo_path = pick_str(config.git.repo_path, env_config.git.repo_path, file_config.git.repo_path, "");
     config.git.branch_prefix = pick_str(config.git.branch_prefix, "", file_config.git.branch_prefix, "collab/");
     config.http.require_auth = env_config.http.require_auth ? env_config.http.require_auth : file_config.http.require_auth;
-    config.swarm.token_ttl = env_config.swarm.token_ttl.count() > 0 ? env_config.swarm.token_ttl : file_config.swarm.token_ttl;
-    config.swarm.heartbeat_timeout = env_config.swarm.heartbeat_timeout.count() > 0 ? env_config.swarm.heartbeat_timeout : file_config.swarm.heartbeat_timeout;
+
+    if (no_auth) {
+        config.http.require_auth = false;
+    }
+
+    config.swarm.token_ttl = pick_duration(env_config.swarm.token_ttl, std::chrono::seconds(86400), file_config.swarm.token_ttl, std::chrono::seconds(86400));
+    config.swarm.heartbeat_timeout = pick_duration(env_config.swarm.heartbeat_timeout, std::chrono::seconds(120), file_config.swarm.heartbeat_timeout, std::chrono::seconds(120));
 
     // macOS Keychain: read secret if requested
     if (use_keychain) {
@@ -174,7 +186,7 @@ int main(int argc, char* argv[]) {
             "  Token    : {}\n\n"
             "Use this token as: Authorization: Bearer <token>\n",
             enroll_agent, enroll_role, config.swarm.id.empty() ? "default" : config.swarm.id,
-            token.token_id);
+            token.token_string);
         return 0;
     }
 

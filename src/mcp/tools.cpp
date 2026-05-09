@@ -401,6 +401,7 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         else if (s == "squash") ms = MergeStrategy::Squash;
         auto id = merges.request_merge(args.value("source", ""), args.value("target", "main"), args.value("requester", ""), ms);
         auto req = merges.get_request(id);
+        if (!req.has_value()) return {{"error", "Merge request not found"}};
         return req->to_json();
     });
 

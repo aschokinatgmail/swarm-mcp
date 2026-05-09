@@ -9,6 +9,7 @@
 #include <chrono>
 #include <vector>
 #include <optional>
+#include <atomic>
 
 #include <nlohmann/json.hpp>
 #include <MQTTAsync.h>
