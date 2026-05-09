@@ -65,6 +65,12 @@ private:
     void handle_message(const std::string& topic, const std::string& payload);
     void handle_reconnect();
 
+public:
+    // Test-only: entry point for message dispatch without broker
+    void inject_message(const std::string& topic, const std::string& payload) {
+        handle_message(topic, payload);
+    }
+
     MqttConfig config_;
     MQTTAsync client_{nullptr};
     mutable std::shared_mutex topics_mutex_;

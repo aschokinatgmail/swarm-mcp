@@ -42,3 +42,10 @@ Thumbs.db
 # Config with secrets
 config/local.json
 *.env
+
+# Coverage / test report artifacts
+coverage.xml
+coverage.json
+test_results.xml
+build-coverage/
+CMakeFiles/

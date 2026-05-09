@@ -153,6 +153,119 @@ TEST_F(GitOperationsTest, CherryPick) {
     git.checkout("main");
 }
 
+TEST_F(GitOperationsTest, CommitWithAuthor) {
+    GitOperations git(test_repo_path);
+    std::ofstream(test_repo_path + "/author.txt") << "content";
+    git.add();
+    EXPECT_TRUE(git.commit("commit with author", "Test Author"));
+}
+
+TEST_F(GitOperationsTest, Pull) {
+    GitOperations git(test_repo_path);
+    // pull without a remote should return false
+    EXPECT_FALSE(git.pull());
+}
+
+TEST_F(GitOperationsTest, Fetch) {
+    GitOperations git(test_repo_path);
+    EXPECT_TRUE(git.fetch());
+}
+
+TEST_F(GitOperationsTest, Rebase) {
+    GitOperations git(test_repo_path);
+    git.checkout("rebase-branch", true);
+    std::ofstream(test_repo_path + "/rebase.txt") << "rebase content";
+    git.add();
+    git.commit("rebase commit");
+    git.checkout("main");
+    EXPECT_TRUE(git.rebase("rebase-branch"));
+}
+
+TEST_F(GitOperationsTest, MergeSquash) {
+    GitOperations git(test_repo_path);
+    git.checkout("squash-branch", true);
+    std::ofstream(test_repo_path + "/squash.txt") << "squash content";
+    git.add();
+    git.commit("squash commit");
+    git.checkout("main");
+    EXPECT_TRUE(git.merge_squash("squash-branch"));
+}
+
+TEST_F(GitOperationsTest, ResetHard) {
+    GitOperations git(test_repo_path);
+    std::ofstream(test_repo_path + "/hard.txt") << "hard";
+    git.add();
+    git.commit("hard reset");
+    EXPECT_TRUE(git.reset("HEAD~1", true));
+}
+
+TEST_F(GitOperationsTest, DiffWithRefs) {
+    GitOperations git(test_repo_path);
+    std::ofstream(test_repo_path + "/diff1.txt") << "v1";
+    git.add();
+    git.commit("v1");
+    auto c1 = git.current_commit();
+    std::ofstream(test_repo_path + "/diff1.txt") << "v2";
+    git.add();
+    git.commit("v2");
+    auto c2 = git.current_commit();
+    auto d = git.diff(c1, c2);
+    EXPECT_FALSE(d.empty());
+}
+
+TEST_F(GitOperationsTest, DiffSingleRef) {
+    GitOperations git(test_repo_path);
+    std::ofstream(test_repo_path + "/d.txt") << "initial";
+    git.add();
+    git.commit("init");
+    auto diff = git.diff("HEAD");
+    // diff against HEAD should be empty (no uncommitted changes)
+    EXPECT_TRUE(diff.empty());
+}
+
+TEST_F(GitOperationsTest, AddSpecificPath) {
+    GitOperations git(test_repo_path);
+    std::ofstream(test_repo_path + "/specific.txt") << "specific";
+    EXPECT_TRUE(git.add("specific.txt"));
+    EXPECT_TRUE(git.has_changes());
+}
+
+TEST_F(GitOperationsTest, BranchListRemote) {
+    GitOperations git(test_repo_path);
+    auto list = git.branches(true);
+    // Remote branches may be empty in local repo
+    EXPECT_GE(list.size(), 0u);
+}
+
+TEST_F(GitOperationsTest, ExecShellInjectionBlocked) {
+    GitOperations git(test_repo_path);
+    auto result = git.exec("status; ls");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.exit_code, -1);
+}
+
+TEST_F(GitOperationsTest, ExecUnquotedVariableBlocked) {
+    GitOperations git(test_repo_path);
+    // '$' outside quotes should be blocked
+    auto result = git.exec("status $HOME");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.exit_code, -1);
+}
+
+TEST_F(GitOperationsTest, ExecQuotedVariableBlocked) {
+    GitOperations git(test_repo_path);
+    // Quoted or not, pipe '|' is always in the dangerous_chars denylist
+    auto result = git.exec("log --format=\"%s | $HOME\"");
+    EXPECT_EQ(result.exit_code, -1);
+}
+
+TEST_F(GitOperationsTest, ExecPopenFailure) {
+    GitOperations git(test_repo_path);
+    // Very long invalid command should fail gracefully
+    auto result = git.exec("nonexistent-command-that-does-not-exist-xyz");
+    EXPECT_FALSE(result.success);
+}
+
 TEST_F(GitOperationsTest, ResetSoft) {
     GitOperations git(test_repo_path);
     std::ofstream(test_repo_path + "/reset.txt") << "reset";

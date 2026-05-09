@@ -172,6 +172,11 @@ add_executable(swarm_mcp_unit_tests
     tests/unit/test_persistence.cpp
     tests/unit/test_http_handler.cpp
     tests/unit/test_keychain.cpp
+    tests/unit/test_mqtt_client.cpp
+    tests/unit/test_coverage_boost.cpp
+    tests/unit/test_branch_coverage.cpp
+    tests/unit/test_coverage_expansion.cpp
+    tests/unit/test_coverage_gaps.cpp
 )
 
 target_link_libraries(swarm_mcp_unit_tests PRIVATE swarm_mcp_lib GTest::gtest GTest::gtest_main)
