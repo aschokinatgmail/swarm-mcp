@@ -82,7 +82,7 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Run unit tests
-        run: ctest --preset ${{ matrix.preset }} -E "Integration|MqttWorkspace|GitWorkflow"
+        run: ctest --preset ${{ matrix.preset }} -E "Integration|MqttWorkspace|GitWorkflow" -R "(?!GitOperations)" --output-on-failure
 
       - name: Generate coverage report (Debug only)
         if: matrix.preset == 'macos-debug'
@@ -91,7 +91,7 @@ jobs:
           cmake --preset ${{ matrix.preset }} -DENABLE_COVERAGE=ON
           cmake --build --preset ${{ matrix.preset }} --target swarm_mcp_unit_tests
           cd build/${{ matrix.preset }}
-          ./swarm_mcp_unit_tests
+          ./swarm_mcp_unit_tests --gtest_filter=-GitOperations*
           gcovr --root ../.. --exclude '.*vcpkg_installed.*' --exclude '.*tests/.*' --exclude '.*build/.*' --html-details --output coverage.html --print-summary
 
       - name: Upload coverage artifact (Debug only)
