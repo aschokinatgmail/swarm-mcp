@@ -16,6 +16,16 @@ endif()
 find_package(fmt CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(eclipse-paho-mqtt-c CONFIG REQUIRED)
+
+# Prefer static target, fall back to shared (vcpkg on Windows builds shared by default)
+if(TARGET eclipse-paho-mqtt-c::paho-mqtt3as-static)
+    set(PAHO_MQTT_C_TARGET eclipse-paho-mqtt-c::paho-mqtt3as-static)
+elseif(TARGET eclipse-paho-mqtt-c::paho-mqtt3as)
+    set(PAHO_MQTT_C_TARGET eclipse-paho-mqtt-c::paho-mqtt3as)
+else()
+    message(FATAL_ERROR "No suitable eclipse-paho-mqtt-c target found (tried paho-mqtt3as-static and paho-mqtt3as)")
+endif()
+
 find_package(httplib CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL CONFIG REQUIRED)
@@ -47,7 +57,7 @@ add_executable(swarm-mcp
 target_link_libraries(swarm-mcp PRIVATE
     fmt::fmt
     nlohmann_json::nlohmann_json
-    eclipse-paho-mqtt-c::paho-mqtt3as-static
+    ${PAHO_MQTT_C_TARGET}
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
@@ -114,7 +124,7 @@ add_library(swarm_mcp_lib STATIC
 target_link_libraries(swarm_mcp_lib PUBLIC
     fmt::fmt
     nlohmann_json::nlohmann_json
-    eclipse-paho-mqtt-c::paho-mqtt3as-static
+    ${PAHO_MQTT_C_TARGET}
     httplib::httplib
     spdlog::spdlog
     OpenSSL::Crypto
