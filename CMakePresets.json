@@ -78,6 +78,7 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Darwin"
             },
+            "binaryDir": "${sourceDir}/build/macos-debug",
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
                 "CMAKE_BUILD_TYPE": "Debug",
