@@ -307,11 +307,11 @@ void SecureMqttClient::on_raw_message(const MqttMessage& msg) {
 
     // Dispatch to registered callbacks
     std::shared_lock lock(cb_mutex_);
-    for (const auto& [pattern, cb] : verified_callbacks_) {
-        if (pattern == msg.topic || pattern == "#" ||
-            (pattern.ends_with("/#") && msg.topic.starts_with(pattern.substr(0, pattern.size() - 2))) ||
-            topic_matches(pattern, msg.topic)) {
-            cb(*envelope);
+    for (const auto& entry : verified_callbacks_) {
+        if (entry.first == msg.topic || entry.first == "#" ||
+            (entry.first.ends_with("/#") && msg.topic.starts_with(entry.first.substr(0, entry.first.size() - 2))) ||
+            topic_matches(entry.first, msg.topic)) {
+            entry.second(*envelope);
             return;
         }
     }
