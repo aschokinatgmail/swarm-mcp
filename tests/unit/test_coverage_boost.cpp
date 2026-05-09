@@ -1331,8 +1331,8 @@ TEST(MqttClientBranch, MultipleSubscribersSamePattern) {
 }
 
 TEST(MqttClientBranch, MqttConfigCustom) {
-    MqttConfig cfg{.host = "broker.local", .port = 8883, .client_id = "test-client",
-                   .username = "user", .password = "pass", .keep_alive_sec = 120, .use_tls = true};
+    MqttConfig cfg{.host = "broker.local", .port = 8883, .username = "user",
+                   .password = "pass", .client_id = "test-client", .keep_alive_sec = 120, .use_tls = true};
     EXPECT_EQ(cfg.host, "broker.local");
     EXPECT_EQ(cfg.port, 8883);
     EXPECT_TRUE(cfg.use_tls);
