@@ -1382,14 +1382,13 @@ TEST(PersistenceRoundtrip, SaveAndLoad) {
 }
 
 TEST(PersistenceRoundtrip, SaveFailsOnInvalidPath) {
-    // Create a temp file and try to use it as a parent directory — must fail on all platforms.
-    auto tmp = std::format("/tmp/swarm_mcp_test_file_parent_{}.txt",
+    auto tmp = std::filesystem::temp_directory_path() / std::format("swarm_mcp_test_file_parent_{}.txt",
         std::chrono::steady_clock::now().time_since_epoch().count());
     {
         std::ofstream f(tmp);
         f << "x";
     }
-    PersistenceLayer pl(tmp + "/sub/snapshot.json");
+    PersistenceLayer pl(tmp.string() + "/sub/snapshot.json");
     json snapshot = PersistenceLayer::create_snapshot(
         json::array(), json::object(), json::object(), json::array(), json::array());
     EXPECT_FALSE(pl.save(snapshot));

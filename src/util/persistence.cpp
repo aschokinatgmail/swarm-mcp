@@ -23,16 +23,8 @@ PersistenceLayer::~PersistenceLayer() {
 bool PersistenceLayer::save(const Snapshot& data) {
     std::error_code ec;
     auto parent = std::filesystem::path(path_).parent_path();
-
-    if (!parent.empty()) {
-        // If parent exists but is not a directory, the path is nonsensical.
-        if (std::filesystem::exists(parent, ec) && !std::filesystem::is_directory(parent, ec)) {
-            spdlog::error("Parent path exists but is not a directory: {}", parent.string());
-            return false;
-        }
-        if (!std::filesystem::exists(parent, ec)) {
-            std::filesystem::create_directories(parent, ec);
-        }
+    if (!parent.empty() && !std::filesystem::exists(parent, ec)) {
+        std::filesystem::create_directories(parent, ec);
     }
 
     std::string tmp_path = path_ + ".tmp";

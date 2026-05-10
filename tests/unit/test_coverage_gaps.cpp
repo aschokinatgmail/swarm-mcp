@@ -208,14 +208,13 @@ TEST(MqttTopicAuthExtra, DefaultSwarmIdPrefix) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 TEST(PersistenceError, SaveToInvalidPathFails) {
-    // Create a temp file and try to use it as a parent directory — must fail on all platforms.
-    auto tmp = std::format("/tmp/swarm_mcp_test_file_parent_{}.txt",
+    auto tmp = std::filesystem::temp_directory_path() / std::format("swarm_mcp_test_file_parent_{}.txt",
         std::chrono::steady_clock::now().time_since_epoch().count());
     {
         std::ofstream f(tmp);
         f << "x";
     }
-    PersistenceLayer pl{tmp + "/sub/file.json"};
+    PersistenceLayer pl{(tmp.string() + "/sub/file.json")};
     EXPECT_FALSE(pl.save({{"key", "value"}}));
     std::filesystem::remove(tmp);
 }
