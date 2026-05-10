@@ -16,17 +16,17 @@ protected:
     std::unique_ptr<MergeCoordinator> coordinator;
 
     void SetUp() override {
-        test_repo_path = std::filesystem::temp_directory_path().string() + "/swarm-mcp-merge-test";
+        test_repo_path = (std::filesystem::temp_directory_path() / ("swarm-mcp-merge-test-" + std::to_string(reinterpret_cast<uintptr_t>(this)))).string();
         std::error_code ec;
         std::filesystem::remove_all(test_repo_path, ec);
         std::filesystem::create_directories(test_repo_path);
-        std::filesystem::current_path(test_repo_path);
-        system("git init");
-        system("git config user.email \"test@test.com\"");
-        system("git config user.name \"Test\"");
-        std::ofstream(test_repo_path + "/initial.txt") << "init";
-        system("git add .");
-        system("git commit -m \"initial\"");
+        auto p = test_repo_path;
+        system(std::format("git init --initial-branch=main \"{}\"", p).c_str());
+        system(std::format("git -C \"{}\" config user.email \"test@test.com\"", p).c_str());
+        system(std::format("git -C \"{}\" config user.name \"Test\"", p).c_str());
+        std::ofstream(p + "/initial.txt") << "init";
+        system(std::format("git -C \"{}\" add .", p).c_str());
+        system(std::format("git -C \"{}\" commit -m \"initial\"", p).c_str());
         git = std::make_unique<GitOperations>(test_repo_path);
         branch_mgr = std::make_unique<BranchManager>(*git, "collab/");
         coordinator = std::make_unique<MergeCoordinator>(*git, *branch_mgr);

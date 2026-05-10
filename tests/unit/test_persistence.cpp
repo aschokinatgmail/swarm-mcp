@@ -9,10 +9,12 @@ using namespace mcp_collab;
 
 class PersistenceTest : public ::testing::Test {
 protected:
-    std::string test_dir = std::filesystem::temp_directory_path().string() + "/swarm_mcp_test_persistence";
-    std::string test_path = test_dir + "/snapshot.json";
+    std::string test_dir;
+    std::string test_path;
 
     void SetUp() override {
+        test_dir = (std::filesystem::temp_directory_path() / ("swarm_mcp_test_persistence-" + std::to_string(reinterpret_cast<uintptr_t>(this)))).string();
+        test_path = test_dir + "/snapshot.json";
         std::error_code ec;
         std::filesystem::create_directories(test_dir, ec);
         cleanup();

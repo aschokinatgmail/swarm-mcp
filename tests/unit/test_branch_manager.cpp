@@ -19,7 +19,7 @@ protected:
         std::filesystem::remove_all(test_repo_path, ec);
         std::filesystem::create_directories(test_repo_path);
         auto p = test_repo_path;
-        system(std::format("git init \"{}\"", p).c_str());
+        system(std::format("git init --initial-branch=main \"{}\"", p).c_str());
         system(std::format("git -C \"{}\" config user.email \"test@test.com\"", p).c_str());
         system(std::format("git -C \"{}\" config user.name \"Test\"", p).c_str());
         std::ofstream(p + "/initial.txt") << "init";

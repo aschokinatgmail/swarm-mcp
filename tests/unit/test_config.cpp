@@ -10,7 +10,7 @@ protected:
     std::string test_config_path;
 
     void SetUp() override {
-        test_config_path = std::filesystem::temp_directory_path().string() + "/swarm-mcp-test-config.json";
+        test_config_path = (std::filesystem::temp_directory_path() / ("swarm-mcp-test-config-" + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".json")).string();
     }
 
     void TearDown() override {
