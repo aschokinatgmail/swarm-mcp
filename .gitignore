@@ -2,6 +2,7 @@
 build/
 out/
 cmake-build-*/
+build-asan/
 
 # IDE files
 .vs/
@@ -49,3 +50,7 @@ coverage.json
 test_results.xml
 build-coverage/
 CMakeFiles/
+
+# Local development
+.cache/
+.sisyphus/

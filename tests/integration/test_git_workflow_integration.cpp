@@ -2,6 +2,7 @@
 #include "mcp_collab/git_operations.hpp"
 #include "mcp_collab/branch_manager.hpp"
 #include "mcp_collab/merge_coordinator.hpp"
+#include "mcp_collab/uuid.hpp"
 #include <filesystem>
 #include <fstream>
 
@@ -13,22 +14,23 @@ protected:
     std::unique_ptr<GitOperations> git;
     std::unique_ptr<BranchManager> branch_mgr;
     std::unique_ptr<MergeCoordinator> merge_coord;
+    std::string base_branch{"main"};
 
     void SetUp() override {
-        test_repo_path = std::filesystem::temp_directory_path().string() + "/swarm-mcp-git-integration";
+        test_repo_path = (std::filesystem::temp_directory_path() /
+            ("swarm-mcp-git-integration-" + generate_uuid())).string();
         std::filesystem::remove_all(test_repo_path);
         std::filesystem::create_directories(test_repo_path);
-        std::filesystem::current_path(test_repo_path);
-        system("git init");
-        system("git config user.email \"test@test.com\"");
-        system("git config user.name \"Test\"");
-        std::ofstream(test_repo_path + "/README.md") << "# Test Repo";
-        system("git add .");
-        system("git commit -m \"Initial commit\"");
-
-        // Determine the default branch name (master or main)
         git = std::make_unique<GitOperations>(test_repo_path);
-        std::string default_branch = git->current_branch();
+        ASSERT_TRUE(git->init());
+        ASSERT_TRUE(git->exec("config user.email \"test@test.com\"").success);
+        ASSERT_TRUE(git->exec("config user.name \"Test\"").success);
+        std::ofstream(test_repo_path + "/README.md") << "# Test Repo";
+        ASSERT_TRUE(git->add("."));
+        ASSERT_TRUE(git->commit("Initial commit"));
+
+        base_branch = git->current_branch();
+        ASSERT_FALSE(base_branch.empty());
 
         branch_mgr = std::make_unique<BranchManager>(*git, "collab/");
         merge_coord = std::make_unique<MergeCoordinator>(*git, *branch_mgr);
@@ -50,8 +52,8 @@ TEST_F(GitWorkflowIntegrationTest, FullBranchLifecycle) {
     EXPECT_TRUE(branch_mgr->commit_changes(branch, "Implement feature for TASK-001", "agent-1"));
 
     // 3. Request merge
-    git->checkout("master");
-    auto merge_id = merge_coord->request_merge(branch, "master", "agent-1", MergeStrategy::Squash);
+    git->checkout(base_branch);
+    auto merge_id = merge_coord->request_merge(branch, base_branch, "agent-1", MergeStrategy::Squash);
     EXPECT_FALSE(merge_id.empty());
 
     // 4. Approve and execute merge
@@ -65,7 +67,7 @@ TEST_F(GitWorkflowIntegrationTest, FullBranchLifecycle) {
 
 TEST_F(GitWorkflowIntegrationTest, BranchLockingSyncsState) {
     auto branch = branch_mgr->create_branch("TASK-002", "agent-2");
-    git->checkout("master");
+    git->checkout(base_branch);
 
     EXPECT_TRUE(branch_mgr->lock_branch(branch));
     auto info = branch_mgr->get_branch_info(branch);
@@ -77,7 +79,7 @@ TEST_F(GitWorkflowIntegrationTest, BranchLockingSyncsState) {
 
 TEST_F(GitWorkflowIntegrationTest, AbandonedBranch) {
     auto branch = branch_mgr->create_branch("TASK-003", "agent-3");
-    git->checkout("master");
+    git->checkout(base_branch);
 
     EXPECT_TRUE(branch_mgr->mark_abandoned(branch));
     EXPECT_EQ(branch_mgr->get_branch_info(branch)->state, BranchState::Abandoned);
@@ -102,9 +104,9 @@ TEST_F(GitWorkflowIntegrationTest, MergeRejection) {
     auto branch = branch_mgr->create_branch("TASK-005", "agent-1");
     std::ofstream(test_repo_path + "/feature5.txt") << "feature 5";
     branch_mgr->commit_changes(branch, "Feature 5", "agent-1");
-    git->checkout("master");
+    git->checkout(base_branch);
 
-    auto merge_id = merge_coord->request_merge(branch, "master", "agent-1");
+    auto merge_id = merge_coord->request_merge(branch, base_branch, "agent-1");
     EXPECT_TRUE(merge_coord->reject_merge(merge_id, "reviewer-1", "not ready"));
 
     auto req = merge_coord->get_request(merge_id);
@@ -118,9 +120,9 @@ TEST_F(GitWorkflowIntegrationTest, MergeRequestByDifferentRequesters) {
     auto branch = branch_mgr->create_branch("TASK-006", "agent-1");
     std::ofstream(test_repo_path + "/f6.txt") << "f6";
     branch_mgr->commit_changes(branch, "F6", "agent-1");
-    git->checkout("master");
+    git->checkout(base_branch);
 
-    auto id = merge_coord->request_merge(branch, "master", "requester-1");
+    auto id = merge_coord->request_merge(branch, base_branch, "requester-1");
     auto by_req = merge_coord->list_by_requester("requester-1");
     EXPECT_EQ(by_req.size(), 1u);
 }
@@ -142,13 +144,13 @@ TEST_F(GitWorkflowIntegrationTest, TaskToBranchToMergeWorkflow) {
     std::ofstream(test_repo_path + "/workflow.txt") << "workflow test";
     EXPECT_TRUE(branch_mgr->commit_changes(branch, "Implement TASK-WF-001", "dev-1"));
 
-    // Go back to master and merge
-    git->checkout("master");
-    auto mid = merge_coord->request_merge(branch, "master", "dev-1", MergeStrategy::Squash);
+    // Go back to the base branch and merge
+    git->checkout(base_branch);
+    auto mid = merge_coord->request_merge(branch, base_branch, "dev-1", MergeStrategy::Squash);
     merge_coord->approve_merge(mid, "lead-dev");
     EXPECT_TRUE(merge_coord->execute_merge(mid));
 
-    // Verify the file exists on master
+    // Verify the file exists on the base branch
     EXPECT_TRUE(std::filesystem::exists(test_repo_path + "/workflow.txt"));
 }
 
