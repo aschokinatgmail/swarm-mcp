@@ -3,16 +3,14 @@
 #include <string>
 #include <random>
 #include <format>
+#include <chrono>
 
 namespace mcp_collab {
 
 inline std::string generate_uuid() {
-    static thread_local std::mt19937_64 rng{std::random_device{}()};
-    static thread_local bool seeded = false;
-    if (!seeded) {
-        rng.seed(std::random_device{}());
-        seeded = true;
-    }
+    static thread_local std::mt19937_64 rng{
+        std::random_device{}() ^
+        static_cast<uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count())};
 
     uint64_t a = rng();
     uint64_t b = rng();

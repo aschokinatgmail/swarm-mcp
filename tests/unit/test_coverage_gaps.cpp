@@ -3,6 +3,7 @@
 #include <fstream>
 #include <thread>
 #include <chrono>
+#include <format>
 
 #include "mcp_collab/secure_mqtt.hpp"
 #include "mcp_collab/auth.hpp"
@@ -207,8 +208,16 @@ TEST(MqttTopicAuthExtra, DefaultSwarmIdPrefix) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 TEST(PersistenceError, SaveToInvalidPathFails) {
-    PersistenceLayer pl{"/dev/null/impossible/directory/file.json"};
+    // Create a temp file and try to use it as a parent directory — must fail on all platforms.
+    auto tmp = std::format("/tmp/swarm_mcp_test_file_parent_{}.txt",
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    {
+        std::ofstream f(tmp);
+        f << "x";
+    }
+    PersistenceLayer pl{tmp + "/sub/file.json"};
     EXPECT_FALSE(pl.save({{"key", "value"}}));
+    std::filesystem::remove(tmp);
 }
 
 TEST(PersistenceError, LoadNonexistentReturnsNullopt) {
