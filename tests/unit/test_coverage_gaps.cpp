@@ -508,6 +508,8 @@ protected:
         std::filesystem::create_directories(tmp_dir);
         git = std::make_unique<GitOperations>(tmp_dir.string());
         git->init();
+        system(std::format("git -C \"{}\" config user.email \"test@test.com\"", tmp_dir.string()).c_str());
+        system(std::format("git -C \"{}\" config user.name \"Test\"", tmp_dir.string()).c_str());
         std::ofstream(tmp_dir / "test.txt") << "hello";
         git->add("test.txt");
         git->commit("initial commit", "testuser");

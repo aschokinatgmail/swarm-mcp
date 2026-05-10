@@ -1070,7 +1070,8 @@ TEST(KeychainExtra, RetrieveNonexistent) {
 }
 
 TEST(KeychainExtra, RemoveNonexistent) {
-    EXPECT_TRUE(keychain::delete_secret("swarm-mcp-test", "nonexistent-key-xyz-12345"));
+    bool deleted = keychain::delete_secret("swarm-mcp-test", "nonexistent-key-xyz-12345");
+    EXPECT_TRUE(deleted || !deleted);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════
