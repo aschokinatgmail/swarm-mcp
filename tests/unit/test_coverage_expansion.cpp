@@ -21,6 +21,14 @@
 
 using namespace mcp_collab;
 
+#ifdef _WIN32
+inline void set_env(const char* name, const char* value) { _putenv_s(name, value); }
+inline void unset_env(const char* name) { _putenv_s(name, ""); }
+#else
+inline void set_env(const char* name, const char* value) { setenv(name, value, 1); }
+inline void unset_env(const char* name) { unsetenv(name); }
+#endif
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Config: env var override branches
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -28,58 +36,58 @@ using namespace mcp_collab;
 class ConfigEnvTest : public ::testing::Test {
 protected:
     void TearDown() override {
-        unsetenv("SWARM_SERVER_NAME");
-        unsetenv("SWARM_ID");
-        unsetenv("SWARM_SECRET");
-        unsetenv("SWARM_MQTT_HOST");
-        unsetenv("SWARM_MQTT_PORT");
-        unsetenv("SWARM_MQTT_USERNAME");
-        unsetenv("SWARM_MQTT_PASSWORD");
-        unsetenv("SWARM_HTTP_HOST");
-        unsetenv("SWARM_HTTP_PORT");
-        unsetenv("SWARM_HTTP_ENDPOINT");
-        unsetenv("SWARM_HTTP_AUTH");
-        unsetenv("SWARM_GIT_REPO_PATH");
-        unsetenv("SWARM_TOKEN_TTL");
-        unsetenv("SWARM_HEARTBEAT_TIMEOUT");
+        unset_env("SWARM_SERVER_NAME");
+        unset_env("SWARM_ID");
+        unset_env("SWARM_SECRET");
+        unset_env("SWARM_MQTT_HOST");
+        unset_env("SWARM_MQTT_PORT");
+        unset_env("SWARM_MQTT_USERNAME");
+        unset_env("SWARM_MQTT_PASSWORD");
+        unset_env("SWARM_HTTP_HOST");
+        unset_env("SWARM_HTTP_PORT");
+        unset_env("SWARM_HTTP_ENDPOINT");
+        unset_env("SWARM_HTTP_AUTH");
+        unset_env("SWARM_GIT_REPO_PATH");
+        unset_env("SWARM_TOKEN_TTL");
+        unset_env("SWARM_HEARTBEAT_TIMEOUT");
     }
 };
 
 TEST_F(ConfigEnvTest, ServerName) {
-    setenv("SWARM_SERVER_NAME", "env-server", 1);
+    set_env("SWARM_SERVER_NAME", "env-server");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.server_name, "env-server");
 }
 
 TEST_F(ConfigEnvTest, SwarmIdAndSecret) {
-    setenv("SWARM_ID", "my-swarm", 1);
-    setenv("SWARM_SECRET", "super-secret", 1);
+    set_env("SWARM_ID", "my-swarm");
+    set_env("SWARM_SECRET", "super-secret");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.swarm.id, "my-swarm");
     EXPECT_EQ(cfg.swarm.secret, "super-secret");
 }
 
 TEST_F(ConfigEnvTest, MqttHostAndPort) {
-    setenv("SWARM_MQTT_HOST", "mqtt.example.com", 1);
-    setenv("SWARM_MQTT_PORT", "9883", 1);
+    set_env("SWARM_MQTT_HOST", "mqtt.example.com");
+    set_env("SWARM_MQTT_PORT", "9883");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.mqtt.host, "mqtt.example.com");
     EXPECT_EQ(cfg.mqtt.port, 9883);
 }
 
 TEST_F(ConfigEnvTest, MqttCredentials) {
-    setenv("SWARM_MQTT_USERNAME", "user1", 1);
-    setenv("SWARM_MQTT_PASSWORD", "pass1", 1);
+    set_env("SWARM_MQTT_USERNAME", "user1");
+    set_env("SWARM_MQTT_PASSWORD", "pass1");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.mqtt.username, "user1");
     EXPECT_EQ(cfg.mqtt.password, "pass1");
 }
 
 TEST_F(ConfigEnvTest, HttpOverrides) {
-    setenv("SWARM_HTTP_HOST", "0.0.0.0", 1);
-    setenv("SWARM_HTTP_PORT", "9090", 1);
-    setenv("SWARM_HTTP_ENDPOINT", "/api", 1);
-    setenv("SWARM_HTTP_AUTH", "true", 1);
+    set_env("SWARM_HTTP_HOST", "0.0.0.0");
+    set_env("SWARM_HTTP_PORT", "9090");
+    set_env("SWARM_HTTP_ENDPOINT", "/api");
+    set_env("SWARM_HTTP_AUTH", "true");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.http.host, "0.0.0.0");
     EXPECT_EQ(cfg.http.port, 9090);
@@ -88,49 +96,49 @@ TEST_F(ConfigEnvTest, HttpOverrides) {
 }
 
 TEST_F(ConfigEnvTest, HttpAuthFalse) {
-    setenv("SWARM_HTTP_AUTH", "0", 1);
+    set_env("SWARM_HTTP_AUTH", "0");
     auto cfg = ServerConfig::from_env();
     EXPECT_FALSE(cfg.http.require_auth);
 }
 
 TEST_F(ConfigEnvTest, GitRepoPath) {
-    setenv("SWARM_GIT_REPO_PATH", "/tmp/my-repo", 1);
+    set_env("SWARM_GIT_REPO_PATH", "/tmp/my-repo");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.git.repo_path, "/tmp/my-repo");
 }
 
 TEST_F(ConfigEnvTest, InvalidMqttPort) {
-    setenv("SWARM_MQTT_PORT", "not_a_number", 1);
+    set_env("SWARM_MQTT_PORT", "not_a_number");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.mqtt.port, 1883);
 }
 
 TEST_F(ConfigEnvTest, InvalidHttpPort) {
-    setenv("SWARM_HTTP_PORT", "abc", 1);
+    set_env("SWARM_HTTP_PORT", "abc");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.http.port, 3001);
 }
 
 TEST_F(ConfigEnvTest, InvalidTokenTtl) {
-    setenv("SWARM_TOKEN_TTL", "invalid", 1);
+    set_env("SWARM_TOKEN_TTL", "invalid");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.swarm.token_ttl.count(), 86400);
 }
 
 TEST_F(ConfigEnvTest, InvalidHeartbeatTimeout) {
-    setenv("SWARM_HEARTBEAT_TIMEOUT", "not_a_number", 1);
+    set_env("SWARM_HEARTBEAT_TIMEOUT", "not_a_number");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.swarm.heartbeat_timeout.count(), 120);
 }
 
 TEST_F(ConfigEnvTest, ValidTokenTtl) {
-    setenv("SWARM_TOKEN_TTL", "7200", 1);
+    set_env("SWARM_TOKEN_TTL", "7200");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.swarm.token_ttl.count(), 7200);
 }
 
 TEST_F(ConfigEnvTest, ValidHeartbeatTimeout) {
-    setenv("SWARM_HEARTBEAT_TIMEOUT", "600", 1);
+    set_env("SWARM_HEARTBEAT_TIMEOUT", "600");
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.swarm.heartbeat_timeout.count(), 600);
 }
