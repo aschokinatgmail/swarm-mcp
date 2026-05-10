@@ -2,6 +2,7 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <algorithm>
+#include <filesystem>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -133,7 +134,11 @@ GitResult GitOperations::exec(const std::string& args) const {
 }
 
 bool GitOperations::is_repo() const {
-    return exec("rev-parse --is-inside-work-tree").success;
+    auto r = exec("rev-parse --show-toplevel");
+    if (!r.success) return false;
+    auto& s = r.stdout_out;
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+    return std::filesystem::weakly_canonical(s) == std::filesystem::weakly_canonical(repo_path_);
 }
 
 std::string GitOperations::current_branch() const {
