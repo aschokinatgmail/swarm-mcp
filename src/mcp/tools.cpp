@@ -531,7 +531,9 @@ void register_collab_tools(McpProtocol& proto, TaskManager& tasks, AgentRegistry
         json result = agent->to_json();
 
         json effective_tools = json::array();
-        for (const auto& [name, def] : proto.tool_definitions()) {
+        for (const auto& entry : proto.tool_definitions()) {
+            const auto& name = entry.first;
+            const auto& def = entry.second;
             if (has_permission(agent->role, def.required_permission)) {
                 effective_tools.push_back(name);
             }

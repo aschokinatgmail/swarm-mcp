@@ -53,7 +53,8 @@ void EventBus::emit(const std::string& type, const std::string& source, const js
     {
         std::shared_lock lock(handlers_mutex_);
         if (auto it = handlers_.find(type); it != handlers_.end()) {
-            for (const auto& [_, handler] : it->second) {
+            for (const auto& entry : it->second) {
+                const auto& handler = entry.second;
                 try { handler(event); }
                 catch (const std::exception& e) {
                     spdlog::error("Event handler exception for '{}': {}", type, e.what());
@@ -61,7 +62,8 @@ void EventBus::emit(const std::string& type, const std::string& source, const js
             }
         }
         if (auto it = handlers_.find("*"); it != handlers_.end()) {
-            for (const auto& [_, handler] : it->second) {
+            for (const auto& entry : it->second) {
+                const auto& handler = entry.second;
                 try { handler(event); }
                 catch (const std::exception& e) {
                     spdlog::error("Wildcard event handler exception: {}", e.what());

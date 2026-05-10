@@ -74,7 +74,9 @@ void register_collab_resources(McpProtocol& proto, TaskManager& tasks, AgentRegi
             entry["environment"] = a.environment.to_json();
 
             json effective_tools = json::array();
-            for (const auto& [name, def] : proto.tool_definitions()) {
+            for (const auto& entry : proto.tool_definitions()) {
+                const auto& name = entry.first;
+                const auto& def = entry.second;
                 if (has_permission(a.role, def.required_permission)) {
                     effective_tools.push_back(name);
                 }
@@ -119,7 +121,9 @@ void register_collab_resources(McpProtocol& proto, TaskManager& tasks, AgentRegi
             role_entry["permissions"] = role_permissions(role);
 
             json tools_list = json::array();
-            for (const auto& [name, def] : proto.tool_definitions()) {
+            for (const auto& entry : proto.tool_definitions()) {
+                const auto& name = entry.first;
+                const auto& def = entry.second;
                 if (has_permission(role, def.required_permission)) {
                     json tool_info = {{"name", name}, {"description", def.description}};
                     tools_list.push_back(tool_info);
@@ -128,7 +132,9 @@ void register_collab_resources(McpProtocol& proto, TaskManager& tasks, AgentRegi
             role_entry["tools"] = tools_list;
 
             json resources_list = json::array();
-            for (const auto& [uri, def] : proto.resource_definitions()) {
+            for (const auto& entry : proto.resource_definitions()) {
+                const auto& uri = entry.first;
+                const auto& def = entry.second;
                 if (has_permission(role, def.required_permission)) {
                     resources_list.push_back(uri);
                 }

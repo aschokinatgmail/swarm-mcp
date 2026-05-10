@@ -237,7 +237,8 @@ bool TaskManager::add_tag(const std::string& id, const std::string& tag) {
 std::vector<Task> TaskManager::list_tasks(const TaskFilter& filter) const {
     std::shared_lock lock(mutex_);
     std::vector<Task> result;
-    for (const auto& [_, task] : tasks_) {
+    for (const auto& entry : tasks_) {
+        const auto& task = entry.second;
         if (filter.status && task.status != *filter.status) continue;
         if (filter.priority && task.priority != *filter.priority) continue;
         if (filter.assignee && task.assignee != *filter.assignee) continue;
@@ -258,7 +259,8 @@ std::vector<Task> TaskManager::list_tasks(const TaskFilter& filter) const {
 std::vector<Task> TaskManager::get_ready_tasks() const {
     std::shared_lock lock(mutex_);
     std::vector<Task> result;
-    for (const auto& [_, task] : tasks_) {
+    for (const auto& entry : tasks_) {
+        const auto& task = entry.second;
         if (task.status != TaskStatus::Pending) continue;
 
         bool all_deps_complete = true;

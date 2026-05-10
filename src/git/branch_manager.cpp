@@ -124,8 +124,8 @@ std::optional<BranchInfo> BranchManager::get_branch_info(const std::string& bran
 std::vector<BranchInfo> BranchManager::list_active() const {
     std::shared_lock lock(mutex_);
     std::vector<BranchInfo> result;
-    for (const auto& [_, info] : branches_) {
-        if (info.state == BranchState::Active) result.push_back(info);
+    for (const auto& entry : branches_) {
+        if (entry.second.state == BranchState::Active) result.push_back(entry.second);
     }
     return result;
 }
@@ -133,16 +133,16 @@ std::vector<BranchInfo> BranchManager::list_active() const {
 std::vector<BranchInfo> BranchManager::list_by_agent(const std::string& agent_id) const {
     std::shared_lock lock(mutex_);
     std::vector<BranchInfo> result;
-    for (const auto& [_, info] : branches_) {
-        if (info.agent_id == agent_id) result.push_back(info);
+    for (const auto& entry : branches_) {
+        if (entry.second.agent_id == agent_id) result.push_back(entry.second);
     }
     return result;
 }
 
 std::optional<BranchInfo> BranchManager::find_by_task(const std::string& task_id) const {
     std::shared_lock lock(mutex_);
-    for (const auto& [_, info] : branches_) {
-        if (info.task_id == task_id) return info;
+    for (const auto& entry : branches_) {
+        if (entry.second.task_id == task_id) return entry.second;
     }
     return std::nullopt;
 }

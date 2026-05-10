@@ -152,8 +152,8 @@ std::vector<std::string> MqttClient::subscribed_topics() const {
     std::shared_lock lock(topics_mutex_);
     std::vector<std::string> topics;
     topics.reserve(callbacks_.size());
-    for (const auto& [k, _] : callbacks_) {
-        topics.push_back(k);
+    for (const auto& entry : callbacks_) {
+        topics.push_back(entry.first);
     }
     return topics;
 }
@@ -189,10 +189,10 @@ void MqttClient::on_connect_success(void* context, MQTTAsync_successData*) {
     spdlog::info("MQTT connected: client_id={}", self->config_.client_id);
 
     std::shared_lock lock(self->topics_mutex_);
-    for (const auto& [topic, cb] : self->callbacks_) {
+    for (const auto& entry : self->callbacks_) {
         MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
         opts.context = self;
-        MQTTAsync_subscribe(self->client_, topic.c_str(), 1, &opts);
+        MQTTAsync_subscribe(self->client_, entry.first.c_str(), 1, &opts);
     }
 
     if (self->on_connect_cb_) self->on_connect_cb_();
@@ -259,10 +259,10 @@ void MqttClient::handle_message(const std::string& topic, const std::string& pay
         return false;
     };
 
-    for (const auto& [pattern, cb] : callbacks_) {
-        if (mqtt_match(pattern, topic)) {
+    for (const auto& entry : callbacks_) {
+        if (mqtt_match(entry.first, topic)) {
             MqttMessage msg{.topic = topic, .payload = payload};
-            cb(msg);
+            entry.second(msg);
             return;
         }
     }

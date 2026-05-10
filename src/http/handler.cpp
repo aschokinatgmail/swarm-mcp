@@ -22,7 +22,8 @@ bool RateLimiter::allow(const std::string& key) {
         return true;
     }
 
-    auto& [count, window_start] = it->second;
+    auto& count = it->second.first;
+    auto& window_start = it->second.second;
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - window_start);
 
     if (elapsed >= std::chrono::seconds(60)) {

@@ -232,7 +232,9 @@ json McpProtocol::handle_tools_list(const McpRequest& req) {
     json tools = json::array();
     int i = 0;
     int count = 0;
-    for (const auto& [name, def] : tools_) {
+    for (const auto& entry : tools_) {
+        const auto& name = entry.first;
+        const auto& def = entry.second;
         if (!has_permission(req.auth_role, def.required_permission)) continue;
         if (i < cursor) { i++; continue; }
         if (count >= limit) break;
@@ -293,7 +295,9 @@ json McpProtocol::handle_resources_list(const McpRequest& req) {
     json res = json::array();
     int i = 0;
     int count = 0;
-    for (const auto& [uri, def] : resources_) {
+    for (const auto& entry : resources_) {
+        const auto& uri = entry.first;
+        const auto& def = entry.second;
         if (!has_permission(req.auth_role, def.required_permission)) continue;
         if (i < cursor) { i++; continue; }
         if (count >= limit) break;
@@ -348,7 +352,9 @@ json McpProtocol::handle_prompts_list(const McpRequest& req) {
     json prompts = json::array();
     int i = 0;
     int count = 0;
-    for (const auto& [name, def] : prompts_) {
+    for (const auto& entry : prompts_) {
+        const auto& name = entry.first;
+        const auto& def = entry.second;
         if (i < cursor) { i++; continue; }
         if (count >= limit) break;
         json p = {{"name", def.name}, {"description", def.description}};

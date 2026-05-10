@@ -142,7 +142,9 @@ bool ContextStore::merge(const std::string& key, const json& data, const std::st
 std::vector<ContextEntry> ContextStore::list(const std::string& prefix) const {
     std::shared_lock lock(mutex_);
     std::vector<ContextEntry> result;
-    for (const auto& [key, entry] : store_) {
+    for (const auto& kv : store_) {
+        const auto& key = kv.first;
+        const auto& entry = kv.second;
         if (prefix.empty() || key.starts_with(prefix)) {
             result.push_back(entry);
         }
@@ -153,7 +155,9 @@ std::vector<ContextEntry> ContextStore::list(const std::string& prefix) const {
 std::unordered_map<std::string, json> ContextStore::snapshot() const {
     std::shared_lock lock(mutex_);
     std::unordered_map<std::string, json> snap;
-    for (const auto& [key, entry] : store_) {
+    for (const auto& kv : store_) {
+        const auto& key = kv.first;
+        const auto& entry = kv.second;
         snap[key] = entry.value;
     }
     return snap;

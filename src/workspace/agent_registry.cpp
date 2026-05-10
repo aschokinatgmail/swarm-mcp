@@ -210,7 +210,8 @@ std::optional<AgentInfo> AgentRegistry::get_agent(const std::string& id) const {
 std::vector<AgentInfo> AgentRegistry::list_agents(std::optional<AgentStatus> filter) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (!filter.has_value() || agent.status == *filter) {
             result.push_back(agent);
         }
@@ -221,7 +222,8 @@ std::vector<AgentInfo> AgentRegistry::list_agents(std::optional<AgentStatus> fil
 std::vector<AgentInfo> AgentRegistry::list_swarm_agents(const std::string& swarm_id, std::optional<AgentStatus> filter) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (agent.swarm_id != swarm_id) continue;
         if (filter.has_value() && agent.status != *filter) continue;
         result.push_back(agent);
@@ -232,7 +234,8 @@ std::vector<AgentInfo> AgentRegistry::list_swarm_agents(const std::string& swarm
 std::vector<AgentInfo> AgentRegistry::find_by_capability(const std::string& capability) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (std::ranges::find(agent.capabilities, capability) != agent.capabilities.end()) {
             result.push_back(agent);
         }
@@ -243,7 +246,8 @@ std::vector<AgentInfo> AgentRegistry::find_by_capability(const std::string& capa
 std::vector<AgentInfo> AgentRegistry::find_idle() const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (agent.status == AgentStatus::Idle || agent.status == AgentStatus::Online) {
             result.push_back(agent);
         }
@@ -254,7 +258,8 @@ std::vector<AgentInfo> AgentRegistry::find_idle() const {
 std::vector<AgentInfo> AgentRegistry::find_idle_in_swarm(const std::string& swarm_id) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (agent.swarm_id != swarm_id) continue;
         if (agent.status == AgentStatus::Idle || agent.status == AgentStatus::Online) {
             result.push_back(agent);
@@ -266,7 +271,8 @@ std::vector<AgentInfo> AgentRegistry::find_idle_in_swarm(const std::string& swar
 std::vector<AgentInfo> AgentRegistry::find_by_role(Role role) const {
     std::shared_lock lock(mutex_);
     std::vector<AgentInfo> result;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (agent.role == role) result.push_back(agent);
     }
     return result;
@@ -307,7 +313,8 @@ size_t AgentRegistry::count() const {
 size_t AgentRegistry::swarm_count(const std::string& swarm_id) const {
     std::shared_lock lock(mutex_);
     size_t n = 0;
-    for (const auto& [_, agent] : agents_) {
+    for (const auto& entry : agents_) {
+        const auto& agent = entry.second;
         if (agent.swarm_id == swarm_id) n++;
     }
     return n;
