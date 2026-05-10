@@ -318,20 +318,43 @@ void StreamableHttpTransport::start() {
 
     spdlog::info("Starting Swarm MCP server on {}:{}{} (auth={})",
         config_.host, config_.port, config_.endpoint, config_.require_auth ? "on" : "off");
-    running_.store(true);
 
-    if (!server_->listen(config_.host, config_.port)) {
+    if (!server_->bind_to_port(config_.host, config_.port)) {
+        spdlog::error("Failed to bind HTTP server on {}:{}", config_.host, config_.port);
+        throw std::runtime_error("Failed to bind HTTP server");
+    }
+
+    running_.store(true);
+    server_thread_ = std::thread([this]() {
+        if (!server_->listen_after_bind()) {
+            spdlog::error("HTTP server stopped unexpectedly on {}:{}", config_.host, config_.port);
+            running_.store(false);
+        }
+    });
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!server_->is_running() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!server_->is_running()) {
         spdlog::error("Failed to start HTTP server on {}:{}", config_.host, config_.port);
         running_.store(false);
+        server_->stop();
+        if (server_thread_.joinable()) {
+            server_thread_.join();
+        }
         throw std::runtime_error("Failed to start HTTP server");
     }
 }
 
 void StreamableHttpTransport::stop() {
-    if (!running_.load()) return;
+    if (!running_.load() && !server_thread_.joinable()) return;
     running_.store(false);
     if (server_) {
         server_->stop();
+    }
+    if (server_thread_.joinable()) {
+        server_thread_.join();
     }
     spdlog::info("HTTP server stopped");
 }
