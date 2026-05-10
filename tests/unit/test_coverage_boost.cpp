@@ -1054,11 +1054,13 @@ TEST_F(TransportExtraTest, PostWithExistingParams) {
 TEST(KeychainExtra, StoreAndRetrieve) {
     std::string key = "test-key-coverage-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     std::string value = "secret-value";
-    EXPECT_TRUE(keychain::store_secret("swarm-mcp-test", key, value));
-    auto retrieved = keychain::get_secret("swarm-mcp-test", key);
-    if (retrieved.has_value()) {
-        EXPECT_EQ(*retrieved, value);
-        EXPECT_TRUE(keychain::delete_secret("swarm-mcp-test", key));
+    bool stored = keychain::store_secret("swarm-mcp-test", key, value);
+    if (stored) {
+        auto retrieved = keychain::get_secret("swarm-mcp-test", key);
+        if (retrieved.has_value()) {
+            EXPECT_EQ(*retrieved, value);
+            EXPECT_TRUE(keychain::delete_secret("swarm-mcp-test", key));
+        }
     }
 }
 

@@ -11,6 +11,7 @@
 #include "mcp_collab/mqtt_client.hpp"
 #include "mcp_collab/channel.hpp"
 #include "mcp_collab/collab_defs.hpp"
+#include <filesystem>
 
 using namespace mcp_collab;
 
@@ -22,12 +23,26 @@ protected:
     ContextStore context;
     EventBus events;
     SecureMqttClient mqtt{MqttConfig{.host = "localhost", .port = 18839}, "test-swarm", "secret"};
-    GitOperations git{"."};
+    std::string test_repo_path;
+    GitOperations git{""};
     BranchManager branches{git, "collab/"};
     MergeCoordinator merges{git, branches};
-    ChannelManager channels{mqtt, "mcp-collab", "test-swarm"};
 
     void SetUp() override {
+        test_repo_path = (std::filesystem::temp_directory_path() / ("swarm-mcp-collab-tools-" + std::to_string(reinterpret_cast<uintptr_t>(this)))).string();
+        std::error_code ec;
+        std::filesystem::remove_all(test_repo_path, ec);
+        std::filesystem::create_directories(test_repo_path);
+        auto p = test_repo_path;
+        system(std::format("git init --initial-branch=main \"{}\"", p).c_str());
+        system(std::format("git -C \"{}\" config user.email \"test@test.com\"", p).c_str());
+        system(std::format("git -C \"{}\" config user.name \"Test\"", p).c_str());
+        std::ofstream(p + "/initial.txt") << "init";
+        system(std::format("git -C \"{}\" add .", p).c_str());
+        system(std::format("git -C \"{}\" commit -m \"initial\"", p).c_str());
+        git = GitOperations(test_repo_path);
+        branches = BranchManager(git, "collab/");
+        merges = MergeCoordinator(git, branches);
         register_collab_tools(proto, tasks, agents, context, events, branches, merges, mqtt.raw_client(), channels);
         proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {{"_auth", {{"role", "coordinator"}}}}}});
     }

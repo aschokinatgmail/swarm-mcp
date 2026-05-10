@@ -157,7 +157,7 @@ bool GitOperations::has_changes() const {
     return r.success && !r.stdout_out.empty();
 }
 
-bool GitOperations::init() const { return exec("init").success; }
+bool GitOperations::init() const { return exec("init --initial-branch=main").success; }
 bool GitOperations::fetch() const { return exec("fetch --all").success; }
 bool GitOperations::pull() const { return exec("pull --rebase").success; }
 bool GitOperations::push() const { return exec("push").success; }

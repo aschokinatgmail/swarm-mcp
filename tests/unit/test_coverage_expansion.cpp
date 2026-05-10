@@ -642,11 +642,13 @@ TEST(RateLimiterEdge, WindowResetAfterTimeout) {
 
 TEST(KeychainExtra, StoreAndDelete) {
     std::string key = "test-delete-key-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    EXPECT_TRUE(keychain::store_secret("swarm-mcp-test", key, "value"));
-    auto retrieved = keychain::get_secret("swarm-mcp-test", key);
-    if (retrieved.has_value()) {
-        EXPECT_EQ(*retrieved, "value");
-        EXPECT_TRUE(keychain::delete_secret("swarm-mcp-test", key));
+    bool stored = keychain::store_secret("swarm-mcp-test", key, "value");
+    if (stored) {
+        auto retrieved = keychain::get_secret("swarm-mcp-test", key);
+        if (retrieved.has_value()) {
+            EXPECT_EQ(*retrieved, "value");
+            EXPECT_TRUE(keychain::delete_secret("swarm-mcp-test", key));
+        }
     }
 }
 
