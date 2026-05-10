@@ -26,8 +26,8 @@ TEST(UUIDTest, FormatCorrect) {
 TEST(UUIDTest, Uniqueness) {
     std::set<std::string> ids;
     for (int i = 0; i < 10000; ++i) {
-        auto [it, inserted] = ids.insert(generate_uuid());
-        EXPECT_TRUE(inserted) << "Duplicate UUID generated at iteration " << i;
+        auto result = ids.insert(generate_uuid());
+        EXPECT_TRUE(result.second) << "Duplicate UUID generated at iteration " << i;
     }
 }
 

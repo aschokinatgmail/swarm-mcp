@@ -37,7 +37,8 @@ EventBus::SubscriptionId EventBus::subscribe(const std::string& event_type, Even
 
 void EventBus::unsubscribe(SubscriptionId id) {
     std::unique_lock lock(handlers_mutex_);
-    for (auto& [type, list] : handlers_) {
+    for (auto& entry : handlers_) {
+        auto& list = entry.second;
         std::erase_if(list, [id](const auto& pair) { return pair.first == id; });
     }
 }
