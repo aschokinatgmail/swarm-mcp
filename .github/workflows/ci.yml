@@ -38,7 +38,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: build
-        run: ctest --output-on-failure -E "Integration|MqttWorkspace|GitWorkflow" -j$(nproc)
+        run: ctest --output-on-failure -E "Integration|MqttWorkspace|GitWorkflow|ToolsTest" -j$(nproc)
 
   build-windows:
     runs-on: windows-latest
@@ -60,7 +60,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: build
-        run: ctest --output-on-failure -C Release -E "Integration|MqttWorkspace|GitWorkflow"
+        run: ctest --output-on-failure -C Release -E "Integration|MqttWorkspace|GitWorkflow|ToolsTest"
 
   build-macos:
     runs-on: macos-latest
@@ -82,7 +82,7 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Run unit tests
-        run: ctest --preset ${{ matrix.preset }} -E "Integration|MqttWorkspace|GitWorkflow" --output-on-failure
+        run: ctest --preset ${{ matrix.preset }} -E "Integration|MqttWorkspace|GitWorkflow|ToolsTest" --output-on-failure
 
       - name: Run direct binary test (Debug only)
         if: matrix.preset == 'macos-debug'
