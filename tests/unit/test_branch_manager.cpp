@@ -14,7 +14,7 @@ protected:
     std::unique_ptr<BranchManager> mgr;
 
     void SetUp() override {
-        test_repo_path = std::filesystem::temp_directory_path().string() + "/swarm-mcp-branch-test";
+        test_repo_path = (std::filesystem::temp_directory_path() / ("swarm-mcp-branch-test-" + std::to_string(reinterpret_cast<uintptr_t>(this)))).string();
         std::error_code ec;
         std::filesystem::remove_all(test_repo_path, ec);
         std::filesystem::create_directories(test_repo_path);

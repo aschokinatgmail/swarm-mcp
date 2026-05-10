@@ -11,11 +11,10 @@ protected:
     std::string test_repo_path;
 
     void SetUp() override {
-        test_repo_path = std::filesystem::temp_directory_path().string() + "/swarm-mcp-git-test";
+        test_repo_path = (std::filesystem::temp_directory_path() / ("swarm-mcp-git-test-" + std::to_string(reinterpret_cast<uintptr_t>(this)))).string();
         std::error_code ec;
         std::filesystem::remove_all(test_repo_path, ec);
         std::filesystem::create_directories(test_repo_path);
-        // Do NOT change global cwd — tests may run in parallel
         auto p = test_repo_path;
         system(std::format("git init \"{}\"", p).c_str());
         system(std::format("git -C \"{}\" config user.email \"test@test.com\"", p).c_str());
