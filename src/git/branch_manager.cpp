@@ -43,6 +43,11 @@ std::string BranchManager::make_branch_name(const std::string& task_id) const {
 
 std::string BranchManager::create_branch(const std::string& task_id, const std::string& agent_id,
                                            const std::string& base) {
+    if (!git_.is_repo()) {
+        spdlog::error("Cannot create branch outside a git repository");
+        return "";
+    }
+
     std::string branch_name = make_branch_name(task_id);
     std::string base_branch = base.empty() ? git_.current_branch() : base;
     if (base_branch.empty()) base_branch = "main";
