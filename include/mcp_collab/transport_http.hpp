@@ -84,6 +84,7 @@ private:
     AuthProvider& auth_;
     StreamableHttpConfig config_;
     std::unique_ptr<httplib::Server> server_;
+    std::thread server_thread_;
     SseStream sse_;
     RateLimiter rate_limiter_;
     std::atomic<bool> running_{false};

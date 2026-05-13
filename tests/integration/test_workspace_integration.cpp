@@ -106,12 +106,13 @@ TEST_F(WorkspaceIntegrationTest, ContextSharingBetweenAgents) {
 
 TEST_F(WorkspaceIntegrationTest, EventBusPropagation) {
     std::vector<std::string> received;
-    events.subscribe("task.*", [&](const Event& e) {
+    events.subscribe("task.updated", [&](const Event& e) {
         received.push_back(e.type);
     });
 
     auto t1 = tasks.create_task("E1", "a1");
     tasks.set_status(t1.id, TaskStatus::InProgress);
+    events.emit("task.updated", "task-manager", t1.to_json());
 
     EXPECT_GE(received.size(), 1u);
 }
@@ -140,8 +141,10 @@ TEST_F(WorkspaceIntegrationTest, TaskSearchAndFiltering) {
 }
 
 TEST_F(WorkspaceIntegrationTest, AgentCapabilitySearch) {
-    agents.register_agent(AgentInfo{.name = "Builder", .capabilities = {"build", "cmake"}}, worker_token);
-    agents.register_agent(AgentInfo{.name = "Tester", .capabilities = {"test", "ctest"}}, worker_token);
+    AuthToken builder_token{"tb", "builder-1", Role::Worker, "test-swarm"};
+    AuthToken tester_token{"tt", "tester-1", Role::Worker, "test-swarm"};
+    agents.register_agent(AgentInfo{.name = "Builder", .capabilities = {"build", "cmake"}}, builder_token);
+    agents.register_agent(AgentInfo{.name = "Tester", .capabilities = {"test", "ctest"}}, tester_token);
 
     auto builders = agents.find_by_capability("build");
     EXPECT_EQ(builders.size(), 1u);

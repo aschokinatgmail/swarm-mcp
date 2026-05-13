@@ -216,4 +216,7 @@ elseif(MSVC)
     target_compile_options(swarm_mcp_integration_tests PRIVATE /W4 /permissive-)
 endif()
 
-gtest_discover_tests(swarm_mcp_integration_tests)
+gtest_discover_tests(swarm_mcp_integration_tests
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES RESOURCE_LOCK mcp_http_integration_port
+)

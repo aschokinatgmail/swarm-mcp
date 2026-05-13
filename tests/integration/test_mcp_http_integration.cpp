@@ -152,16 +152,35 @@ TEST_F(McpHttpIntegrationTest, PingResponds) {
 }
 
 TEST_F(McpHttpIntegrationTest, ToolAuthEnforcement) {
-    send_request(json::parse(R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})"));
+    AuthProvider secure_auth{"auth-enforcement-secret"};
+    McpProtocol secure_proto{ServerInfo{.name = "secure", .version = "1.0.0"}};
+    StreamableHttpTransport secure_transport(secure_proto, secure_auth, StreamableHttpConfig{
+        .host = server_host, .port = static_cast<uint16_t>(server_port + 2), .endpoint = "/mcp", .require_auth = true,
+    });
+    register_collab_tools(secure_proto, tasks, agents, context, events, branches, merges, mqtt.raw_client(), channels);
+    register_collab_resources(secure_proto, tasks, agents, context, events);
+    secure_transport.start();
 
-    // Observer trying to create a task (should fail at permission level)
-    // Since require_auth=false, a synthetic observer token is used via _auth
+    auto token = secure_auth.issue_token("obs", Role::Observer, "s1");
+    httplib::Client client(server_host, server_port + 2);
+    auto init_res = client.Post("/mcp",
+        httplib::Headers{{"Authorization", "Bearer " + token.token_string}},
+        R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{}})",
+        "application/json");
+    ASSERT_TRUE(init_res);
+
     json req = json::parse(
-        R"({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"task_create","arguments":{"title":"Blocked","creator":"obs"},"_auth":{"agent_id":"obs","role":"observer","swarm_id":"s1"}}})"
+        R"({"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"task_create","arguments":{"title":"Blocked","creator":"obs"}}})"
     );
-    auto resp = send_request(req);
-    EXPECT_TRUE(resp.contains("result"));
-    EXPECT_TRUE(resp["result"]["isError"] == true || (resp.contains("error")));
+    auto res = client.Post("/mcp",
+        httplib::Headers{{"Authorization", "Bearer " + token.token_string}},
+        req.dump(),
+        "application/json");
+    secure_transport.stop();
+
+    ASSERT_TRUE(res);
+    auto resp = json::parse(res->body);
+    EXPECT_TRUE(resp.contains("error") || (resp.contains("result") && resp["result"].value("isError", false)));
 }
 
 TEST_F(McpHttpIntegrationTest, BatchRequest) {
