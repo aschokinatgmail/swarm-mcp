@@ -236,7 +236,9 @@ TEST_F(HttpHandlerTest, NotificationHandlerReceivesBroadcast) {
 
 // ── Query Token Auth Tests ───────────────────────────────────────────────────
 
-TEST_F(HttpHandlerTest, GetWithQueryTokenAuthenticates) {
+TEST_F(HttpHandlerTest, GetWithQueryTokenIsRejected) {
+    // #89/#52: Bearer tokens must NOT be accepted via URL query param —
+    // tokens in URLs leak via logs, referers, and browser history.
     StreamableHttpTransport transport(
         *protocol_, *auth_,
         StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
@@ -244,15 +246,27 @@ TEST_F(HttpHandlerTest, GetWithQueryTokenAuthenticates) {
     auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
     httplib::Request req = make_request("GET", "/mcp");
     req.set_header("Accept", "text/event-stream");
-    // Set token as query parameter (common for SSE which doesn't support custom headers easily)
     req.params.emplace("token", token.token_string);
     httplib::Response res;
 
-    // This will fail with bad request because SSE sink is not exercised in handler test,
-    // but we only want to verify that authenticate() accepts the query token.
     transport.handle_get(req, res);
-    // If auth failed, status would be 401. With query param it should get past auth.
-    EXPECT_NE(res.status, 401) << "Query parameter token should be accepted for SSE auth";
+    EXPECT_EQ(res.status, 401) << "Query parameter token must be rejected; use Authorization header";
+}
+
+TEST_F(HttpHandlerTest, PostWithQueryTokenIsRejected) {
+    // #89/#52: POST must also reject query-param tokens.
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true});
+    auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
+    httplib::Request req = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
+    req.params.emplace("token", token.token_string);
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+    EXPECT_EQ(res.status, 401) << "Query parameter token must be rejected on POST too";
 }
 
 // ── Rate Limiter Window Reset Tests ───────────────────────────────────────────
@@ -508,4 +522,180 @@ TEST_F(HttpHandlerTest, CorsOriginWildcardSetsAccessControlAllowOriginStar) {
     transport.handle_post(req, res);
 
     EXPECT_EQ(res.get_header_value("Access-Control-Allow-Origin"), "*");
+}
+
+// ── Batch Size Limit Tests (#90) ──────────────────────────────────────────────
+
+TEST_F(HttpHandlerTest, BatchWithinLimitSucceeds) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false, .rate_limit_rpm = 0});
+    json batch = json::array();
+    for (std::size_t i = 0; i < kMaxJsonRpcBatchSize; ++i) {
+        batch.push_back({{"jsonrpc", "2.0"}, {"id", i}, {"method", "ping"}});
+    }
+    httplib::Request req = make_request("POST", "/mcp", batch.dump());
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_NE(res.status, 400);
+    auto j = json::parse(res.body);
+    EXPECT_TRUE(j.is_array());
+    EXPECT_EQ(j.size(), kMaxJsonRpcBatchSize);
+}
+
+TEST_F(HttpHandlerTest, BatchExceedingLimitReturns32600) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false, .rate_limit_rpm = 0});
+    json batch = json::array();
+    for (std::size_t i = 0; i < kMaxJsonRpcBatchSize + 1; ++i) {
+        batch.push_back({{"jsonrpc", "2.0"}, {"id", i}, {"method", "ping"}});
+    }
+    httplib::Request req = make_request("POST", "/mcp", batch.dump());
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.status, 400);
+    auto j = json::parse(res.body);
+    EXPECT_EQ(j["error"]["code"], -32600);
+    EXPECT_TRUE(j["error"]["message"].get<std::string>().find("Batch size limit") != std::string::npos);
+}
+
+TEST_F(HttpHandlerTest, BatchExactlyAtLimitSucceeds) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false, .rate_limit_rpm = 0});
+    json batch = json::array();
+    for (std::size_t i = 0; i < kMaxJsonRpcBatchSize; ++i) {
+        batch.push_back({{"jsonrpc", "2.0"}, {"id", i}, {"method", "ping"}});
+    }
+    httplib::Request req = make_request("POST", "/mcp", batch.dump());
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_NE(res.status, 400) << "Batch at exactly the limit should be accepted";
+}
+
+// ── Sliding Window Rate Limiter Tests (#92) ───────────────────────────────────
+
+TEST_F(HttpHandlerTest, SlidingWindowAllowsBurstWithinLimit) {
+    RateLimiter limiter(5);
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_TRUE(limiter.allow("client-a")) << "Request " << i << " should be allowed";
+    }
+    EXPECT_FALSE(limiter.allow("client-a")) << "6th request should be throttled";
+}
+
+TEST_F(HttpHandlerTest, SlidingWindowDifferentKeysIndependent) {
+    RateLimiter limiter(2);
+    EXPECT_TRUE(limiter.allow("client-a"));
+    EXPECT_TRUE(limiter.allow("client-a"));
+    EXPECT_FALSE(limiter.allow("client-a"));
+    EXPECT_TRUE(limiter.allow("client-b")) << "Different key has its own bucket";
+    EXPECT_TRUE(limiter.allow("client-b"));
+    EXPECT_FALSE(limiter.allow("client-b"));
+}
+
+TEST_F(HttpHandlerTest, SlidingWindowZeroMeansUnlimited) {
+    RateLimiter limiter(0);
+    for (int i = 0; i < 100; ++i) {
+        EXPECT_TRUE(limiter.allow("client")) << "Unlimited limiter should always allow";
+    }
+}
+
+TEST_F(HttpHandlerTest, SlidingWindowEvictsOldEntries) {
+    // Verify the deque-based sliding window evicts timestamps older than 60s.
+    // We can't wait 60s in a unit test, so we verify the structure indirectly:
+    // a fresh limiter with a small limit should allow exactly `limit` requests.
+    RateLimiter limiter(3);
+    EXPECT_TRUE(limiter.allow("k"));
+    EXPECT_TRUE(limiter.allow("k"));
+    EXPECT_TRUE(limiter.allow("k"));
+    EXPECT_FALSE(limiter.allow("k"));
+    // Different key still works
+    EXPECT_TRUE(limiter.allow("other"));
+}
+
+// ── Pre-Auth Rate Limiting Tests (#74) ────────────────────────────────────────
+
+TEST_F(HttpHandlerTest, RateLimitAppliesBeforeAuthOnPost) {
+    // #74: Rate limiting must apply BEFORE auth so brute-force token attempts
+    // are throttled by IP even with invalid/missing tokens.
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true, .rate_limit_rpm = 2});
+
+    // Send 2 requests with NO auth (would be 401) — these consume rate budget.
+    for (int i = 0; i < 2; ++i) {
+        httplib::Request req = make_request("POST", "/mcp",
+            R"({"jsonrpc":"2.0","id":)" + std::to_string(i) + R"(,"method":"ping"})");
+        httplib::Response res;
+        transport.handle_post(req, res);
+        EXPECT_EQ(res.status, 401) << "Unauthenticated request should get 401";
+    }
+
+    // 3rd request with a VALID token should still be rate-limited (429),
+    // proving the rate limiter ran before auth and counted the failed attempts.
+    auto token = auth_->issue_token("agent-1", Role::Worker, "test-swarm");
+    httplib::Request req = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":99,"method":"ping"})",
+        "Bearer " + token.token_string);
+    httplib::Response res;
+    transport.handle_post(req, res);
+    EXPECT_EQ(res.status, 429) << "Valid token should be throttled because pre-auth rate limit was hit by failed attempts";
+}
+
+TEST_F(HttpHandlerTest, RateLimitAppliesBeforeAuthOnGet) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true, .rate_limit_rpm = 1});
+
+    // First unauthenticated GET — consumes rate budget, returns 401.
+    httplib::Request req1 = make_request("GET", "/mcp");
+    req1.set_header("Accept", "text/event-stream");
+    httplib::Response res1;
+    transport.handle_get(req1, res1);
+    EXPECT_EQ(res1.status, 401);
+
+    // Second GET with valid token — should be 429 (rate-limited before auth).
+    auto token = auth_->issue_token("agent-1", Role::Observer, "test-swarm");
+    httplib::Request req2 = make_request("GET", "/mcp");
+    req2.set_header("Accept", "text/event-stream");
+    req2.set_header("Authorization", "Bearer " + token.token_string);
+    httplib::Response res2;
+    transport.handle_get(req2, res2);
+    EXPECT_EQ(res2.status, 429) << "GET rate limit should apply before auth";
+}
+
+TEST_F(HttpHandlerTest, BruteForceTokensAreThrottled) {
+    // #74: Simulate brute-force token attempts — all invalid, all from same IP.
+    // After the rate limit is hit, even subsequent attempts should get 429, not 401.
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = true, .rate_limit_rpm = 3});
+
+    int count_401 = 0;
+    int count_429 = 0;
+    for (int i = 0; i < 5; ++i) {
+        httplib::Request req = make_request("POST", "/mcp",
+            R"({"jsonrpc":"2.0","id":)" + std::to_string(i) + R"(,"method":"ping"})",
+            "Bearer invalid-token-" + std::to_string(i));
+        httplib::Response res;
+        transport.handle_post(req, res);
+        if (res.status == 401) ++count_401;
+        if (res.status == 429) ++count_429;
+    }
+
+    EXPECT_EQ(count_401, 3) << "First 3 brute-force attempts should get 401";
+    EXPECT_EQ(count_429, 2) << "Remaining attempts should be throttled with 429";
 }

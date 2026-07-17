@@ -4,6 +4,7 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <optional>
 
 #include "mcp_collab/secure_mqtt.hpp"
 #include "mcp_collab/channel.hpp"
@@ -18,6 +19,7 @@
 #include "mcp_collab/protocol.hpp"
 #include "mcp_collab/auth.hpp"
 #include "mcp_collab/config.hpp"
+#include "mcp_collab/persistence.hpp"
 
 namespace mcp_collab {
 
@@ -39,6 +41,8 @@ private:
     void setup_mqtt_bridges();
     void heartbeat_loop();
     void prune_loop();
+    void load_persistence();
+    void setup_auto_save();
 
     ServerConfig config_;
     AuthProvider auth_;
@@ -54,6 +58,7 @@ private:
     McpProtocol protocol_;
     StreamableHttpTransport http_transport_;
 
+    std::optional<PersistenceLayer> persistence_;
     std::thread heartbeat_thread_;
     std::thread prune_thread_;
     std::atomic<bool> running_{false};

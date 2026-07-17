@@ -27,28 +27,20 @@ bool RateLimiter::allow(const std::string& key) {
 
     std::lock_guard lock(mutex_);
     auto now = std::chrono::steady_clock::now();
-    auto it = buckets_.find(key);
+    auto& timestamps = buckets_[key];
 
-    if (it == buckets_.end()) {
-        buckets_[key] = {1, now};
-        return true;
+    // Evict timestamps older than the 60-second sliding window.
+    while (!timestamps.empty() &&
+           std::chrono::duration_cast<std::chrono::seconds>(now - timestamps.front()) >=
+               std::chrono::seconds(60)) {
+        timestamps.pop_front();
     }
 
-    auto& count = it->second.first;
-    auto& window_start = it->second.second;
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - window_start);
-
-    if (elapsed >= std::chrono::seconds(60)) {
-        count = 1;
-        window_start = now;
-        return true;
-    }
-
-    if (count >= max_rpm_) {
+    if (static_cast<int>(timestamps.size()) >= max_rpm_) {
         return false;
     }
 
-    count++;
+    timestamps.push_back(now);
     return true;
 }
 
@@ -143,11 +135,6 @@ std::optional<AuthToken> StreamableHttpTransport::authenticate(const httplib::Re
 
     std::string auth_header = req.get_header_value("Authorization");
     if (auth_header.empty()) {
-        // Also accept token as query parameter for SSE clients
-        auto query_token = req.get_param_value("token");
-        if (!query_token.empty()) {
-            return auth_.validate_token(query_token);
-        }
         return std::nullopt;
     }
 
@@ -163,17 +150,20 @@ bool StreamableHttpTransport::check_permission(const AuthToken& token, Permissio
 
 void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::Response& res) {
     apply_cors(config_, res);
+
+    // Rate-limit BEFORE auth (#74): throttle brute-force token attempts by
+    // remote address before the expensive token validation runs.
+    std::string rate_key = req.remote_addr;
+    if (!rate_limiter_.allow(rate_key)) {
+        res.status = 429;
+        res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32004,"message":"Rate limit exceeded"}})", "application/json");
+        return;
+    }
+
     auto token = authenticate(req);
     if (!token) {
         res.status = 401;
         res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32001,"message":"Authentication required"}})", "application/json");
-        return;
-    }
-
-    std::string rate_key = token->agent_id.empty() ? req.remote_addr : token->agent_id;
-    if (!rate_limiter_.allow(rate_key)) {
-        res.status = 429;
-        res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32004,"message":"Rate limit exceeded"}})", "application/json");
         return;
     }
 
@@ -187,6 +177,19 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
     bool is_notification = false;
     try {
         json body = json::parse(req.body);
+
+        // Reject oversized JSON-RPC batches (#90): a batch larger than
+        // kMaxJsonRpcBatchSize is a resource-exhaustion vector.
+        if (body.is_array() && body.size() > kMaxJsonRpcBatchSize) {
+            json err = {
+                {"jsonrpc", "2.0"},
+                {"id", nullptr},
+                {"error", {{"code", -32600}, {"message", std::format("Batch size limit exceeded: maximum {} requests per batch", kMaxJsonRpcBatchSize)}}}
+            };
+            res.status = 400;
+            res.set_content(err.dump(), "application/json");
+            return;
+        }
 
         // Inject auth context into params for authorization checks
         json auth_context = {
@@ -243,6 +246,15 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
 
 void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::Response& res) {
     apply_cors(config_, res);
+
+    // Rate-limit BEFORE auth (#74): throttle brute-force token attempts by
+    // remote address before the expensive token validation runs.
+    if (!rate_limiter_.allow(req.remote_addr)) {
+        res.status = 429;
+        res.set_content(R"({"jsonrpc":"2.0","error":{"code":-32004,"message":"Rate limit exceeded"}})", "application/json");
+        return;
+    }
+
     auto token = authenticate(req);
     if (!token) {
         res.status = 401;

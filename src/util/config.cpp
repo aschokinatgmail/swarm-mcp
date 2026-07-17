@@ -143,7 +143,11 @@ ServerConfig ServerConfig::from_env() {
     if (env_val) cfg.swarm.id = env_val;
 
     env_val = std::getenv("SWARM_SECRET");
-    if (env_val) cfg.swarm.secret = env_val;
+    if (env_val) {
+        cfg.swarm.secret = env_val;
+        spdlog::warn("SWARM_SECRET read from environment; consider --secret-file for better security.");
+        unsetenv("SWARM_SECRET");
+    }
 
     env_val = std::getenv("SWARM_MQTT_HOST");
     if (env_val) cfg.mqtt.host = env_val;
@@ -202,6 +206,46 @@ ServerConfig ServerConfig::from_env() {
 bool ServerConfig::resolve_require_auth(const std::optional<bool>& env_val, bool file_val) {
     if (env_val.has_value()) return *env_val;
     return file_val;
+}
+
+std::optional<std::string> ServerConfig::read_secret_file(const std::string& path) {
+    if (contains_dotdot(path)) {
+        throw std::invalid_argument(
+            std::format("Secret file path '{}' contains '..' segments, which are not allowed.", path));
+    }
+
+    auto resolved = std::filesystem::weakly_canonical(path);
+    std::filesystem::path cwd = std::filesystem::weakly_canonical(std::filesystem::current_path());
+    std::filesystem::path temp_dir = std::filesystem::weakly_canonical(std::filesystem::temp_directory_path());
+
+    const char* home_env = std::getenv("HOME");
+    std::filesystem::path home = home_env
+        ? std::filesystem::weakly_canonical(std::filesystem::path(home_env))
+        : std::filesystem::path();
+
+    bool allowed = is_under_root(resolved, cwd) ||
+                   is_under_root(resolved, temp_dir) ||
+                   (!home.empty() && is_under_root(resolved, home));
+
+    if (!allowed) {
+        throw std::invalid_argument(
+            std::format("Secret file path '{}' (resolved to '{}') is outside allowed directories. "
+                       "Secret files must be under: current working directory, "
+                       "system temp directory, or $HOME.",
+                       path, resolved.string()));
+    }
+
+    std::ifstream file(path);
+    if (!file.is_open()) return std::nullopt;
+
+    std::string content((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+    while (!content.empty() && (content.back() == '\n' || content.back() == '\r' ||
+                                 content.back() == ' ' || content.back() == '\t')) {
+        content.pop_back();
+    }
+    if (content.empty()) return std::nullopt;
+    return content;
 }
 
 }

@@ -49,7 +49,7 @@ struct MqttEnvelope {
     static std::optional<MqttEnvelope> verify(const std::string& raw, const std::string& secret);
 
     // Check staleness (reject messages older than max_age)
-    bool is_fresh(std::chrono::seconds max_age = std::chrono::seconds(300)) const;
+    bool is_fresh(std::chrono::seconds max_age = std::chrono::seconds(60)) const;
 };
 
 // ── Topic authorization ──────────────────────────────────────────────
@@ -120,7 +120,7 @@ private:
     MqttTopicAuth topic_auth_;
     std::string swarm_id_;
     std::string swarm_secret_;
-    std::chrono::seconds max_message_age_{300};
+    std::chrono::seconds max_message_age_{60};
 
     mutable std::shared_mutex cb_mutex_;
     std::unordered_map<std::string, std::function<void(const MqttEnvelope&)>> verified_callbacks_;

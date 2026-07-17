@@ -8,6 +8,7 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <deque>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -22,6 +23,11 @@ namespace mcp_collab {
 // queue bounded (CWE-400 / slow-reader DoS mitigation).
 inline constexpr std::size_t kMaxSseQueueEntries = 1024;
 
+// Maximum number of JSON-RPC requests allowed in a single batch request.
+// Batches exceeding this are rejected with error -32600 to prevent
+// resource-exhaustion DoS via oversized batches (#90).
+inline constexpr std::size_t kMaxJsonRpcBatchSize = 100;
+
 struct StreamableHttpConfig {
     std::string host{"127.0.0.1"};
     uint16_t port{3001};
@@ -32,6 +38,12 @@ struct StreamableHttpConfig {
     int rate_limit_rpm{60};
 };
 
+// Sliding-window rate limiter (#92). For each key, a deque of request
+// timestamps is maintained; timestamps older than the 60-second window are
+// evicted on each call. A request is allowed only when the number of
+// timestamps within the window is below the limit. Unlike a fixed-window
+// counter, this prevents a client from sending 2× the limit in a burst
+// straddling a window boundary.
 class RateLimiter {
 public:
     explicit RateLimiter(int max_requests_per_minute = 0);
@@ -41,7 +53,7 @@ public:
 private:
     int max_rpm_;
     mutable std::mutex mutex_;
-    std::unordered_map<std::string, std::pair<int, std::chrono::steady_clock::time_point>> buckets_;
+    std::unordered_map<std::string, std::deque<std::chrono::steady_clock::time_point>> buckets_;
 };
 
 class SseStream {

@@ -87,7 +87,9 @@ TEST_F(SecureMqttRawMsgTest, CrossSwarmMessageRejected) {
     EXPECT_FALSE(callback_fired);
 }
 
-TEST_F(SecureMqttRawMsgTest, DefaultSwarmAccepted) {
+TEST_F(SecureMqttRawMsgTest, DefaultSwarmRejectedByNonDefaultClient) {
+    // Issue #42: "default" swarm is no longer exempt from isolation.
+    // A "test-swarm" client must reject messages from "default".
     bool callback_fired = false;
     client.subscribe_verified("mcp-collab/test-swarm/tasks", 1,
         [&](const MqttEnvelope&) { callback_fired = true; });
@@ -96,7 +98,7 @@ TEST_F(SecureMqttRawMsgTest, DefaultSwarmAccepted) {
         {{"action", "create"}}, "hmac-secret");
     client.raw_client().inject_message("mcp-collab/test-swarm/tasks", envelope.to_json().dump());
 
-    EXPECT_TRUE(callback_fired);
+    EXPECT_FALSE(callback_fired);
 }
 
 TEST_F(SecureMqttRawMsgTest, WildcardCallbackMatch) {

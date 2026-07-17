@@ -32,26 +32,6 @@ find_package(OpenSSL CONFIG REQUIRED)
 
 add_executable(swarm-mcp
     src/main.cpp
-    src/mcp/protocol.cpp
-    src/mcp/server.cpp
-    src/mcp/tools.cpp
-    src/mcp/resources.cpp
-    src/mcp/prompts.cpp
-    src/mqtt/client.cpp
-    src/mqtt/channel.cpp
-    src/mqtt/secure_mqtt.cpp
-    src/workspace/task_manager.cpp
-    src/workspace/event_bus.cpp
-    src/workspace/context_store.cpp
-    src/workspace/agent_registry.cpp
-    src/git/operations.cpp
-    src/git/branch_manager.cpp
-    src/git/merge_coordinator.cpp
-    src/http/handler.cpp
-    src/util/auth.cpp
-    src/util/config.cpp
-    src/util/persistence.cpp
-    src/util/keychain.cpp
 )
 
 target_link_libraries(swarm-mcp PRIVATE
@@ -104,6 +84,7 @@ add_library(swarm_mcp_lib STATIC
     src/mcp/tools.cpp
     src/mcp/resources.cpp
     src/mcp/prompts.cpp
+    src/mcp/server.cpp
     src/mqtt/client.cpp
     src/mqtt/channel.cpp
     src/mqtt/secure_mqtt.cpp

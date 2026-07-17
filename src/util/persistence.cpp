@@ -5,10 +5,15 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <cerrno>
+#include <cstring>
 
 #ifdef _WIN32
 #include <limits.h>
 #include <string>
+#else
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 namespace mcp_collab {
@@ -42,6 +47,19 @@ bool PersistenceLayer::save(const Snapshot& data) {
             std::filesystem::remove(tmp_path, ec);
             return false;
         }
+
+#ifndef _WIN32
+        // fsync the temp file before atomic rename so the data is durable
+        int fd = ::open(tmp_path.c_str(), O_RDONLY);
+        if (fd >= 0) {
+            if (::fsync(fd) != 0) {
+                spdlog::warn("fsync failed for {}: {}", tmp_path, std::strerror(errno));
+            }
+            ::close(fd);
+        } else {
+            spdlog::warn("open for fsync failed for {}: {}", tmp_path, std::strerror(errno));
+        }
+#endif
 
         std::filesystem::rename(tmp_path, path_);
         last_saved_ = data;

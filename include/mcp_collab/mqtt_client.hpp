@@ -64,7 +64,6 @@ private:
     static void on_subscribe_failure(void* context, MQTTAsync_failureData* response);
 
     void handle_message(const std::string& topic, const std::string& payload);
-    void handle_reconnect();
 
 public:
     // Test-only: entry point for message dispatch without broker
@@ -75,8 +74,8 @@ public:
     MqttConfig config_;
     MQTTAsync client_{nullptr};
     mutable std::shared_mutex topics_mutex_;
-    mutable std::mutex pending_mutex_;
     std::unordered_map<std::string, MqttCallback> callbacks_;
+    std::unordered_map<std::string, int> subscription_qos_;
     std::atomic<bool> connected_{false};
     std::function<void()> on_connect_cb_;
     std::function<void()> on_disconnect_cb_;

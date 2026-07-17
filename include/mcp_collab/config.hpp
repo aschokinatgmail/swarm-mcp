@@ -59,6 +59,10 @@ struct ServerConfig {
     static ServerConfig from_file(const std::string& path);
     static ServerConfig from_env();
     static bool resolve_require_auth(const std::optional<bool>& env_val, bool file_val);
+
+    // Read a secret from a file, trimming trailing whitespace/newlines.
+    // Returns std::nullopt if the file cannot be opened or is empty.
+    static std::optional<std::string> read_secret_file(const std::string& path);
 };
 
 }

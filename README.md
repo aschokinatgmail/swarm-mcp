@@ -13,7 +13,7 @@ A C++23 MCP (Model Context Protocol) collaboration server for multi-agent coordi
 ┌───────────────────▼─────────────────────────────┐
 │              Swarm MCP Server                    │
 │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │ Protocol │ │ Auth/RBAC│ │ 15 MCP Tools     │ │
+│  │ Protocol │ │ Auth/RBAC│ │ 23 MCP Tools     │ │
 │  │ Handler  │ │ (3 roles)│ │ 6 Resources      │ │
 │  └──────────┘ └──────────┘ │ 4 Prompts         │ │
 │  ┌──────────┐ ┌──────────┐ └──────────────────┘ │
@@ -243,9 +243,9 @@ Note: Integration tests that start HTTP servers are excluded by default. Run the
 | DELETE | `/mcp` | Close SSE session |
 | GET | `/health` | Health check |
 
-### Available MCP Tools (15)
+### Available MCP Tools (23)
 
-`task_create`, `task_update_status`, `task_assign`, `task_list`, `task_info`, `agent_register`, `agent_deregister`, `agent_heartbeat`, `agent_list`, `branch_create`, `branch_commit`, `branch_merge_request`, `branch_list`, `context_set`, `context_get`
+`task_create`, `task_list`, `task_assign`, `task_update_status`, `task_get`, `task_ready`, `agent_register`, `agent_describe`, `agent_list`, `agent_find_capability`, `agent_set_role`, `context_set`, `context_get`, `context_list`, `context_merge`, `branch_create`, `branch_commit`, `merge_request`, `merge_approve`, `merge_execute`, `event_publish`, `event_recent`, `heartbeat`
 
 ### Configuration
 
@@ -282,7 +282,7 @@ swarm-mcp/
 │   ├── http/               # HTTP handler with SSE
 │   └── util/               # Auth, config
 ├── tests/
-│   ├── unit/               # 11 unit test files (181 tests)
+│   ├── unit/               # 11 unit test files (843+ tests)
 │   └── integration/        # 4 integration test files
 ├── config/default.json     # Default configuration
 ├── CMakeLists.txt          # Build system
@@ -291,7 +291,7 @@ swarm-mcp/
 
 ## Testing
 
-- **181 unit tests** covering all core modules
+- **843+ unit tests** covering all core modules
 - **4 integration test files** for MCP/HTTP, workspace, MQTT, and Git workflows
 - Build target: `swarm_mcp_unit_tests`, `swarm_mcp_integration_tests`
 

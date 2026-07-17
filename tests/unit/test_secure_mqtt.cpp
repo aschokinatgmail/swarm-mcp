@@ -60,7 +60,7 @@ TEST_F(MqttEnvelopeTest, VerifyWrongEnvelopeVersion) {
 
 TEST_F(MqttEnvelopeTest, Freshness) {
     auto envelope = MqttEnvelope::sign("a", "s", Role::Worker, {}, secret);
-    EXPECT_TRUE(envelope.is_fresh(std::chrono::seconds(300)));
+    EXPECT_TRUE(envelope.is_fresh(std::chrono::seconds(60)));
     EXPECT_TRUE(envelope.is_fresh(std::chrono::hours(1)));
 }
 
@@ -69,6 +69,33 @@ TEST_F(MqttEnvelopeTest, StalenessDetection) {
     env.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count() - 600000;
     EXPECT_FALSE(env.is_fresh(std::chrono::seconds(300)));
+}
+
+// ── Issue #82: default max_message_age is 60s ──────────────────────────
+
+TEST_F(MqttEnvelopeTest, DefaultMaxAge60sRejects61sOld) {
+    MqttEnvelope env;
+    env.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - 61000;
+    // Default argument is 60s; a 61s-old message should be stale.
+    EXPECT_FALSE(env.is_fresh());
+}
+
+TEST_F(MqttEnvelopeTest, DefaultMaxAge60sAccepts30sOld) {
+    MqttEnvelope env;
+    env.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - 30000;
+    // 30s old is within the 60s default window.
+    EXPECT_TRUE(env.is_fresh());
+}
+
+TEST_F(MqttEnvelopeTest, DefaultMaxAge60sRejects300sOld) {
+    // Regression: previously the default was 300s, so a 300s-old message was
+    // accepted. With the new 60s default it must be rejected.
+    MqttEnvelope env;
+    env.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - 300000;
+    EXPECT_FALSE(env.is_fresh());
 }
 
 // ── MqttTopicAuth tests ─────────────────────────────────────────────
@@ -165,4 +192,89 @@ TEST_F(VerifiedWildcardTest, PlusAtEnd) {
 
 TEST_F(VerifiedWildcardTest, PlusAndHashCombined) {
     EXPECT_TRUE(dispatch_invoked("mcp-collab/+/events/#", "mcp-collab/swarm-1/events/foo"));
+}
+
+// ── Issue #42: "default" swarm is not exempt from isolation ─────────────
+
+class SwarmIsolationTest : public ::testing::Test {
+protected:
+    std::string secret = "isolation-test-secret";
+};
+
+TEST_F(SwarmIsolationTest, DefaultSwarmRejectedByNonDefaultClient) {
+    // A client configured for "my-swarm" must reject messages from "default".
+    SecureMqttClient client(MqttConfig{}, "my-swarm", secret);
+    bool invoked = false;
+    client.subscribe_verified("mcp-collab/my-swarm/tasks", 1,
+                              [&](const MqttEnvelope&) { invoked = true; });
+    auto envelope = MqttEnvelope::sign("agent-1", "default", Role::Worker,
+                                       {{"x", 1}}, secret);
+    client.raw_client().inject_message("mcp-collab/my-swarm/tasks",
+                                       envelope.to_json().dump());
+    EXPECT_FALSE(invoked);
+}
+
+TEST_F(SwarmIsolationTest, NonDefaultSwarmRejectedByDefaultClient) {
+    // A client configured for "default" must reject messages from "my-swarm".
+    SecureMqttClient client(MqttConfig{}, "default", secret);
+    bool invoked = false;
+    client.subscribe_verified("mcp-collab/default/tasks", 1,
+                              [&](const MqttEnvelope&) { invoked = true; });
+    auto envelope = MqttEnvelope::sign("agent-1", "my-swarm", Role::Worker,
+                                       {{"x", 1}}, secret);
+    client.raw_client().inject_message("mcp-collab/default/tasks",
+                                       envelope.to_json().dump());
+    EXPECT_FALSE(invoked);
+}
+
+TEST_F(SwarmIsolationTest, SameSwarmAccepted) {
+    SecureMqttClient client(MqttConfig{}, "my-swarm", secret);
+    bool invoked = false;
+    client.subscribe_verified("mcp-collab/my-swarm/tasks", 1,
+                              [&](const MqttEnvelope&) { invoked = true; });
+    auto envelope = MqttEnvelope::sign("agent-1", "my-swarm", Role::Worker,
+                                       {{"x", 1}}, secret);
+    client.raw_client().inject_message("mcp-collab/my-swarm/tasks",
+                                       envelope.to_json().dump());
+    EXPECT_TRUE(invoked);
+}
+
+TEST_F(SwarmIsolationTest, DefaultToDefaultAccepted) {
+    SecureMqttClient client(MqttConfig{}, "default", secret);
+    bool invoked = false;
+    client.subscribe_verified("mcp-collab/default/tasks", 1,
+                              [&](const MqttEnvelope&) { invoked = true; });
+    auto envelope = MqttEnvelope::sign("agent-1", "default", Role::Worker,
+                                       {{"x", 1}}, secret);
+    client.raw_client().inject_message("mcp-collab/default/tasks",
+                                       envelope.to_json().dump());
+    EXPECT_TRUE(invoked);
+}
+
+// ── Issue #82: SecureMqttClient default max_message_age is 60s ───────────
+
+TEST(SecureMqttDefaultAgeTest, DefaultAgeRejects300sOldMessage) {
+    std::string sec = "age-test-secret";
+    SecureMqttClient client(MqttConfig{}, "swarm-1", sec);
+    bool invoked = false;
+    client.subscribe_verified("mcp-collab/swarm-1/tasks", 1,
+                              [&](const MqttEnvelope&) { invoked = true; });
+
+    // Build an envelope with a 300s-old timestamp — should be rejected by
+    // the 60s default (previously it would have been accepted).
+    MqttEnvelope env;
+    env.envelope_version = "swarm-mcp/v1";
+    env.sender = "agent-1";
+    env.swarm_id = "swarm-1";
+    env.role = "worker";
+    env.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count() - 300000;
+    env.payload = {{"x", 1}};
+    std::string signing_input = std::format("{}:{}:{}:{}", env.sender, env.swarm_id,
+                                            env.timestamp, env.payload.dump());
+    env.signature = compute_hmac(signing_input, sec);
+
+    client.raw_client().inject_message("mcp-collab/swarm-1/tasks",
+                                       env.to_json().dump());
+    EXPECT_FALSE(invoked);
 }

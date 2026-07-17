@@ -2,9 +2,11 @@
 #include "mcp_collab/merge_coordinator.hpp"
 #include "mcp_collab/git_operations.hpp"
 #include "mcp_collab/branch_manager.hpp"
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <vector>
 
 using namespace mcp_collab;
 
@@ -183,4 +185,38 @@ TEST_F(MergeCoordinatorTest, Callback) {
 
     coordinator->approve_merge(id, "r1");
     EXPECT_EQ(last_event, "merge.approved");
+}
+
+TEST_F(MergeCoordinatorTest, ConcurrentReadsAreSafe) {
+    // Populate several merge requests so readers have data to scan.
+    for (int i = 0; i < 5; ++i) {
+        auto b = branch_mgr->create_branch("tcr" + std::to_string(i), "agent-1");
+        std::ofstream(test_repo_path + "/fcr" + std::to_string(i) + ".txt") << "c";
+        branch_mgr->commit_changes(b, "c", "agent-1");
+        git->checkout("main");
+        coordinator->request_merge(b, "main", "agent-1");
+    }
+
+    constexpr int kReaders = 8;
+    constexpr int kIters = 200;
+    std::atomic<int> errors{0};
+    std::vector<std::thread> threads;
+    threads.reserve(kReaders);
+
+    auto reader = [&]() {
+        for (int i = 0; i < kIters; ++i) {
+            // Each read method must be safe under concurrent access via shared_lock.
+            auto pending = coordinator->pending_requests();
+            auto by_branch = coordinator->list_by_branch("main");
+            auto by_req = coordinator->list_by_requester("agent-1");
+            // Sanity: counts must be consistent across reads of a quiescent map.
+            if (pending.size() > by_branch.size()) ++errors;
+            if (by_req.size() != by_branch.size()) ++errors;
+        }
+    };
+
+    for (int i = 0; i < kReaders; ++i) threads.emplace_back(reader);
+    for (auto& t : threads) t.join();
+
+    EXPECT_EQ(errors.load(), 0);
 }

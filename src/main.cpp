@@ -2,6 +2,7 @@
 #include <string>
 #include <csignal>
 #include <atomic>
+#include <cstring>
 
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -29,7 +30,8 @@ void print_usage(const char* prog) {
         "  -m, --mqtt <host>          MQTT broker address (default: localhost)\n"
         "  -M, --mqtt-port <port>     MQTT broker port (default: 1883)\n"
         "  -s, --swarm <id>           Swarm identifier\n"
-        "  -k, --secret <key>         Swarm authentication secret\n"
+        "  -k, --secret <key>         Swarm authentication secret (insecure: visible in process listing)\n"
+        "  --secret-file <path>       Read swarm secret from a file (recommended over --secret)\n"
         "  -g, --git-path <path>      Git repository path\n"
         "  --no-auth                  Disable authentication (dev mode)\n"
         "  --enroll <agent_id>        Enroll a new agent and print its token\n"
@@ -57,6 +59,8 @@ int main(int argc, char* argv[]) {
     std::string store_secret_val;
     std::string enroll_agent;
     std::string enroll_role = "worker";
+    bool secret_from_argv = false;
+    std::string secret_file_path;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -74,6 +78,10 @@ int main(int argc, char* argv[]) {
             config.swarm.id = argv[++i];
         } else if ((arg == "-k" || arg == "--secret") && i + 1 < argc) {
             config.swarm.secret = argv[++i];
+            secret_from_argv = true;
+            std::memset(argv[i], 0, std::strlen(argv[i]));
+        } else if (arg == "--secret-file" && i + 1 < argc) {
+            secret_file_path = argv[++i];
         } else if ((arg == "-g" || arg == "--git-path") && i + 1 < argc) {
             config.git.repo_path = argv[++i];
         } else if (arg == "--no-auth") {
@@ -99,6 +107,26 @@ int main(int argc, char* argv[]) {
 
     if (verbose) spdlog::set_level(spdlog::level::debug);
     if (quiet) spdlog::set_level(spdlog::level::err);
+
+    if (secret_from_argv) {
+        spdlog::warn("Secret passed via --secret is visible in process listings. "
+                     "Consider using --secret-file <path> instead.");
+    }
+
+    if (!secret_file_path.empty()) {
+        try {
+            auto file_secret = mcp_collab::ServerConfig::read_secret_file(secret_file_path);
+            if (file_secret) {
+                config.swarm.secret = *file_secret;
+            } else {
+                spdlog::error("Could not read secret from file '{}' (empty or missing).", secret_file_path);
+                return 1;
+            }
+        } catch (const std::exception& e) {
+            spdlog::error("Failed to read secret file: {}", e.what());
+            return 1;
+        }
+    }
 
     // macOS Keychain: store secret and exit
     if (!store_secret_val.empty()) {

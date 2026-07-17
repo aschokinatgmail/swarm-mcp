@@ -5,6 +5,25 @@
 
 using namespace mcp_collab;
 
+// Portable environment variable wrapper
+#ifdef _WIN32
+    #include <stdlib.h>
+    inline void set_env(const char* name, const char* value) {
+        _putenv_s(name, value);
+    }
+    inline void unset_env(const char* name) {
+        _putenv_s(name, "");
+    }
+#else
+    #include <stdlib.h>
+    inline void set_env(const char* name, const char* value) {
+        setenv(name, value, 1);
+    }
+    inline void unset_env(const char* name) {
+        unsetenv(name);
+    }
+#endif
+
 class ConfigTest : public ::testing::Test {
 protected:
     std::string test_config_path;
@@ -112,13 +131,12 @@ TEST_F(ConfigTest, FromFilePartialOverride) {
 }
 
 TEST_F(ConfigTest, FromEnv) {
-#ifdef _WIN32
     // Set some env vars
-    _putenv_s("SWARM_ID", "env-swarm");
-    _putenv_s("SWARM_SECRET", "env-secret");
-    _putenv_s("SWARM_HTTP_PORT", "9999");
-    _putenv_s("SWARM_HTTP_AUTH", "true");
-    _putenv_s("SWARM_TOKEN_TTL", "7200");
+    set_env("SWARM_ID", "env-swarm");
+    set_env("SWARM_SECRET", "env-secret");
+    set_env("SWARM_HTTP_PORT", "9999");
+    set_env("SWARM_HTTP_AUTH", "true");
+    set_env("SWARM_TOKEN_TTL", "7200");
 
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.swarm.id, "env-swarm");
@@ -127,32 +145,11 @@ TEST_F(ConfigTest, FromEnv) {
     EXPECT_EQ(cfg.http.require_auth, true);
     EXPECT_EQ(cfg.swarm.token_ttl.count(), 7200);
 
-    _putenv_s("SWARM_ID", "");
-    _putenv_s("SWARM_SECRET", "");
-    _putenv_s("SWARM_HTTP_PORT", "");
-    _putenv_s("SWARM_HTTP_AUTH", "");
-    _putenv_s("SWARM_TOKEN_TTL", "");
-#else
-    // Set some env vars using setenv
-    setenv("SWARM_ID", "env-swarm", 1);
-    setenv("SWARM_SECRET", "env-secret", 1);
-    setenv("SWARM_HTTP_PORT", "9999", 1);
-    setenv("SWARM_HTTP_AUTH", "true", 1);
-    setenv("SWARM_TOKEN_TTL", "7200", 1);
-
-    auto cfg = ServerConfig::from_env();
-    EXPECT_EQ(cfg.swarm.id, "env-swarm");
-    EXPECT_EQ(cfg.swarm.secret, "env-secret");
-    EXPECT_EQ(cfg.http.port, 9999);
-    EXPECT_EQ(cfg.http.require_auth, true);
-    EXPECT_EQ(cfg.swarm.token_ttl.count(), 7200);
-
-    unsetenv("SWARM_ID");
-    unsetenv("SWARM_SECRET");
-    unsetenv("SWARM_HTTP_PORT");
-    unsetenv("SWARM_HTTP_AUTH");
-    unsetenv("SWARM_TOKEN_TTL");
-#endif
+    unset_env("SWARM_ID");
+    unset_env("SWARM_SECRET");
+    unset_env("SWARM_HTTP_PORT");
+    unset_env("SWARM_HTTP_AUTH");
+    unset_env("SWARM_TOKEN_TTL");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

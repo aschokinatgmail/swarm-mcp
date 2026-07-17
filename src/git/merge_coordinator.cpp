@@ -145,14 +145,14 @@ bool MergeCoordinator::perform_merge(const MergeRequest& req) {
 }
 
 std::optional<MergeRequest> MergeCoordinator::get_request(const std::string& id) const {
-    std::unique_lock lock(mutex_);
+    std::shared_lock lock(mutex_);
     auto it = requests_.find(id);
     if (it != requests_.end()) return it->second;
     return std::nullopt;
 }
 
 std::vector<MergeRequest> MergeCoordinator::pending_requests() const {
-    std::unique_lock lock(mutex_);
+    std::shared_lock lock(mutex_);
     std::vector<MergeRequest> result;
     for (const auto& entry : requests_) {
         if (entry.second.status == "pending") result.push_back(entry.second);
@@ -161,7 +161,7 @@ std::vector<MergeRequest> MergeCoordinator::pending_requests() const {
 }
 
 std::vector<MergeRequest> MergeCoordinator::list_by_branch(const std::string& branch) const {
-    std::unique_lock lock(mutex_);
+    std::shared_lock lock(mutex_);
     std::vector<MergeRequest> result;
     for (const auto& entry : requests_) {
         if (entry.second.source_branch == branch || entry.second.target_branch == branch) result.push_back(entry.second);
@@ -170,7 +170,7 @@ std::vector<MergeRequest> MergeCoordinator::list_by_branch(const std::string& br
 }
 
 std::vector<MergeRequest> MergeCoordinator::list_by_requester(const std::string& requester) const {
-    std::unique_lock lock(mutex_);
+    std::shared_lock lock(mutex_);
     std::vector<MergeRequest> result;
     for (const auto& entry : requests_) {
         if (entry.second.requester == requester) result.push_back(entry.second);

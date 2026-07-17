@@ -271,6 +271,22 @@ TEST_F(McpProtocolTest, ToolResultWithCodeMessageIsNotError) {
     EXPECT_EQ(parsed["message"], "OK");
 }
 
+TEST_F(McpProtocolTest, ToolResultWithErrorSentinelButMismatchedTypesIsNotError) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    proto.register_tool({.name = "bad_types", .description = "Sentinel with wrong types",
+        .input_schema = {{"type", "object"}}, .required_permission = Permission::TaskRead},
+        [](const json&) -> json {
+            return {{"_is_error", true}, {"code", "not-a-number"}, {"message", 123}};
+        });
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"bad_types","_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_FALSE(resp.contains("error"));
+    EXPECT_TRUE(resp.contains("result"));
+    EXPECT_EQ(resp["result"]["isError"], false);
+}
+
 TEST_F(McpProtocolTest, ToolResultWithErrorSentinelIsError) {
     proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
     proto.register_tool({.name = "failing", .description = "Returns error sentinel",

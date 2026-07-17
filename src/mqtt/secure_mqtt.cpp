@@ -305,7 +305,7 @@ void SecureMqttClient::on_raw_message(const MqttMessage& msg) {
     }
 
     // Swarm isolation — reject messages from other swarms
-    if (envelope->swarm_id != swarm_id_ && envelope->swarm_id != "default" && swarm_id_ != "default") {
+    if (envelope->swarm_id != swarm_id_) {
         spdlog::warn("MQTT: dropping cross-swarm message from swarm={} (expected={})",
             envelope->swarm_id, swarm_id_);
         return;

@@ -114,6 +114,7 @@ bool MqttClient::subscribe(const std::string& topic, int qos, MqttCallback callb
     {
         std::unique_lock lock(topics_mutex_);
         callbacks_[topic] = std::move(callback);
+        subscription_qos_[topic] = qos;
     }
 
     MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
@@ -135,6 +136,7 @@ bool MqttClient::unsubscribe(const std::string& topic) {
     {
         std::unique_lock lock(topics_mutex_);
         callbacks_.erase(topic);
+        subscription_qos_.erase(topic);
     }
 
     MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
@@ -192,7 +194,12 @@ void MqttClient::on_connect_success(void* context, MQTTAsync_successData*) {
     for (const auto& entry : self->callbacks_) {
         MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
         opts.context = self;
-        MQTTAsync_subscribe(self->client_, entry.first.c_str(), 1, &opts);
+        int qos = 1;
+        auto qos_it = self->subscription_qos_.find(entry.first);
+        if (qos_it != self->subscription_qos_.end()) {
+            qos = qos_it->second;
+        }
+        MQTTAsync_subscribe(self->client_, entry.first.c_str(), qos, &opts);
     }
 
     if (self->on_connect_cb_) self->on_connect_cb_();

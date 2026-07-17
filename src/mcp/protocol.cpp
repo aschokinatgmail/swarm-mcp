@@ -94,7 +94,17 @@ json McpProtocol::handle_request(const json& request) {
         }
         auto result = handle_tools_call(req);
         if (result.value("_is_error", false)) {
-            return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
+            if (result.contains("code") && result["code"].is_number_integer() &&
+                result.contains("message") && result["message"].is_string()) {
+                return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
+            }
+            // Type mismatch: strip error sentinel and wrap as success
+            result.erase("_is_error");
+            result.erase("code");
+            result.erase("message");
+            return req.id.has_value()
+                ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", {{"content", json::array({{{"type", "text"}, {"text", result.dump()}}})}, {"isError", false}}}}
+                : json::object();
         }
         return req.id.has_value()
             ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", result}}
@@ -114,7 +124,17 @@ json McpProtocol::handle_request(const json& request) {
         }
         auto result = handle_resources_read(req);
         if (result.value("_is_error", false)) {
-            return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
+            if (result.contains("code") && result["code"].is_number_integer() &&
+                result.contains("message") && result["message"].is_string()) {
+                return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
+            }
+            // Type mismatch: strip error sentinel and wrap as success
+            result.erase("_is_error");
+            result.erase("code");
+            result.erase("message");
+            return req.id.has_value()
+                ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", {{"contents", json::array({{{"uri", req.params.value("uri", "")}, {"mimeType", "application/json"}, {"text", result.dump()}}})}}}}
+                : json::object();
         }
         return req.id.has_value()
             ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", result}}
@@ -147,7 +167,17 @@ json McpProtocol::handle_request(const json& request) {
         }
         auto result = handle_prompts_get(req);
         if (result.value("_is_error", false)) {
-            return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
+            if (result.contains("code") && result["code"].is_number_integer() &&
+                result.contains("message") && result["message"].is_string()) {
+                return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
+            }
+            // Type mismatch: strip error sentinel and wrap as success
+            result.erase("_is_error");
+            result.erase("code");
+            result.erase("message");
+            return req.id.has_value()
+                ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", {{"messages", result}}}}
+                : json::object();
         }
         return req.id.has_value()
             ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", result}}

@@ -197,3 +197,35 @@ TEST_F(PersistenceTest, SaveComplexNestedData) {
     ASSERT_TRUE(loaded.has_value());
     EXPECT_EQ((*loaded)["tasks"][0]["nested"]["deep"].size(), 3u);
 }
+
+TEST_F(PersistenceTest, FsyncBeforeRename) {
+    PersistenceLayer pl(test_path);
+    json data = {{"fsync_test", true}, {"payload", "durable-data"}};
+
+    EXPECT_TRUE(pl.save(data));
+
+    EXPECT_TRUE(std::filesystem::exists(test_path));
+    EXPECT_FALSE(std::filesystem::exists(test_path + ".tmp"));
+
+    auto loaded = pl.load();
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ((*loaded)["fsync_test"], true);
+    EXPECT_EQ((*loaded)["payload"], "durable-data");
+
+    std::error_code ec;
+    auto fsize = std::filesystem::file_size(test_path, ec);
+    ASSERT_FALSE(ec);
+    EXPECT_GT(fsize, 0u);
+}
+
+TEST_F(PersistenceTest, FsyncOnOverwrite) {
+    PersistenceLayer pl(test_path);
+    pl.save({{"version", 1}});
+    EXPECT_TRUE(pl.save({{"version", 2}, {"extra", "data"}}));
+
+    auto loaded = pl.load();
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ((*loaded)["version"], 2);
+    EXPECT_EQ((*loaded)["extra"], "data");
+    EXPECT_FALSE(std::filesystem::exists(test_path + ".tmp"));
+}

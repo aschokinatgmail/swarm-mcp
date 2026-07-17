@@ -1,6 +1,7 @@
 #include "mcp_collab/server.hpp"
 #include "mcp_collab/collab_defs.hpp"
 #include <spdlog/spdlog.h>
+#include <filesystem>
 
 namespace mcp_collab {
 
@@ -28,6 +29,13 @@ SwarmServer::SwarmServer(const ServerConfig& cfg)
         secure_mqtt_.raw_client(), channels_);
     register_collab_resources(protocol_, task_manager_, agent_registry_, context_store_, event_bus_);
     register_collab_prompts(protocol_);
+
+    std::string swarm_id = cfg.swarm.id.empty() ? "default" : cfg.swarm.id;
+    std::string persist_dir = std::filesystem::path("data").string();
+    std::error_code ec;
+    std::filesystem::create_directories(persist_dir, ec);
+    std::string persist_path = persist_dir + "/" + swarm_id + "_snapshot.json";
+    persistence_.emplace(persist_path);
 }
 
 SwarmServer::~SwarmServer() {
@@ -47,6 +55,8 @@ bool SwarmServer::start() {
         setup_mqtt_bridges();
     }
 
+    load_persistence();
+
     task_manager_.on_task_event([this](const std::string& event, const Task& task) {
         event_bus_.emit(event, "task-manager", task.to_json());
     });
@@ -65,6 +75,8 @@ bool SwarmServer::start() {
     heartbeat_thread_ = std::thread([this]() { heartbeat_loop(); });
     prune_thread_ = std::thread([this]() { prune_loop(); });
 
+    setup_auto_save();
+
     try {
         http_transport_.start();
     } catch (const std::exception& e) {
@@ -79,6 +91,8 @@ bool SwarmServer::start() {
 void SwarmServer::stop() {
     if (!running_.load()) return;
     running_.store(false);
+
+    if (persistence_) persistence_->disable_auto_save();
 
     http_transport_.stop();
     secure_mqtt_.disconnect();
@@ -172,6 +186,82 @@ void SwarmServer::prune_loop() {
             spdlog::info("Pruned {} stale agents", pruned);
         }
     }
+}
+
+void SwarmServer::load_persistence() {
+    if (!persistence_) return;
+    auto snapshot = persistence_->load();
+    if (!snapshot) return;
+
+    try {
+        if (snapshot->contains("tasks")) {
+            for (const auto& tj : (*snapshot)["tasks"]) {
+                Task t = Task::from_json(tj);
+                auto created = task_manager_.create_task(t.title, t.creator, t.description, t.priority);
+                created.assignee = t.assignee;
+                created.status = t.status;
+                created.dependencies = t.dependencies;
+                created.tags = t.tags;
+                created.context = t.context;
+                created.deadline = t.deadline;
+                task_manager_.update_task(created.id, created);
+                if (!t.assignee.empty()) {
+                    task_manager_.assign_task(created.id, t.assignee);
+                }
+                task_manager_.set_status(created.id, t.status);
+            }
+        }
+        if (snapshot->contains("agents")) {
+            for (const auto& aj : (*snapshot)["agents"]) {
+                AgentInfo ai = AgentInfo::from_json(aj);
+                AuthToken tok;
+                tok.agent_id = ai.id;
+                tok.role = ai.role;
+                tok.swarm_id = config_.swarm.id.empty() ? "default" : config_.swarm.id;
+                agent_registry_.register_agent(ai, tok);
+            }
+        }
+        if (snapshot->contains("context")) {
+            for (auto it = (*snapshot)["context"].begin(); it != (*snapshot)["context"].end(); ++it) {
+                context_store_.set(it.key(), it.value(), "");
+            }
+        }
+    } catch (const std::exception& e) {
+        spdlog::warn("Failed to restore persistence snapshot: {}", e.what());
+    }
+}
+
+void SwarmServer::setup_auto_save() {
+    if (!persistence_) return;
+    persistence_->set_auto_save_interval(std::chrono::seconds(30));
+    persistence_->enable_auto_save([this]() -> json {
+        json tasks_arr = json::array();
+        for (const auto& t : task_manager_.list_tasks()) {
+            tasks_arr.push_back(t.to_json());
+        }
+
+        json agents_arr = json::array();
+        for (const auto& a : agent_registry_.list_agents()) {
+            agents_arr.push_back(a.to_json());
+        }
+
+        json context_obj = json::object();
+        for (const auto& [k, v] : context_store_.snapshot()) {
+            context_obj[k] = v;
+        }
+
+        json branches_arr = json::array();
+        for (const auto& b : branch_mgr_.list_active()) {
+            branches_arr.push_back(b.to_json());
+        }
+
+        json mrs_arr = json::array();
+        for (const auto& mr : merge_coordinator_.pending_requests()) {
+            mrs_arr.push_back(mr.to_json());
+        }
+
+        return PersistenceLayer::create_snapshot(tasks_arr, agents_arr, context_obj, branches_arr, mrs_arr);
+    });
 }
 
 }

@@ -5,6 +5,7 @@
 #include <optional>
 #include <functional>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 
 #include "mcp_collab/git_operations.hpp"
@@ -57,7 +58,7 @@ private:
 
     GitOperations& git_;
     BranchManager& branch_mgr_;
-    mutable std::mutex mutex_;
+    mutable std::shared_mutex mutex_;
     std::unordered_map<std::string, MergeRequest> requests_;
     MergeCallback callback_;
 };

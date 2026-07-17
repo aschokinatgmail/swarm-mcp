@@ -200,3 +200,41 @@ TEST(MqttClientMessage, HandleMessageAllMatchingSubscribersCalled) {
     client.inject_message("a/b", "test");
     EXPECT_TRUE(called);  // At least one handler fires
 }
+
+// ── Issue #51: QoS stored per subscription ──────────────────────────────
+
+TEST(MqttClientQos, SubscribeStoresQos) {
+    MqttClient client(MqttConfig{});
+    client.subscribe("topic/q0", 0, [](const MqttMessage&) {});
+    client.subscribe("topic/q1", 1, [](const MqttMessage&) {});
+    client.subscribe("topic/q2", 2, [](const MqttMessage&) {});
+    EXPECT_EQ(client.subscription_qos_.at("topic/q0"), 0);
+    EXPECT_EQ(client.subscription_qos_.at("topic/q1"), 1);
+    EXPECT_EQ(client.subscription_qos_.at("topic/q2"), 2);
+}
+
+TEST(MqttClientQos, UnsubscribeRemovesQos) {
+    MqttClient client(MqttConfig{});
+    client.subscribe("topic/q1", 1, [](const MqttMessage&) {});
+    EXPECT_EQ(client.subscription_qos_.count("topic/q1"), 1u);
+    client.unsubscribe("topic/q1");
+    EXPECT_EQ(client.subscription_qos_.count("topic/q1"), 0u);
+}
+
+TEST(MqttClientQos, ResubscribeUpdatesQos) {
+    MqttClient client(MqttConfig{});
+    client.subscribe("topic/x", 1, [](const MqttMessage&) {});
+    EXPECT_EQ(client.subscription_qos_.at("topic/x"), 1);
+    client.subscribe("topic/x", 2, [](const MqttMessage&) {});
+    EXPECT_EQ(client.subscription_qos_.at("topic/x"), 2);
+}
+
+TEST(MqttClientQos, MultipleTopicsDistinctQos) {
+    MqttClient client(MqttConfig{});
+    client.subscribe("a/b", 0, [](const MqttMessage&) {});
+    client.subscribe("c/d", 2, [](const MqttMessage&) {});
+    client.subscribe("e/f", 1, [](const MqttMessage&) {});
+    EXPECT_EQ(client.subscription_qos_.at("a/b"), 0);
+    EXPECT_EQ(client.subscription_qos_.at("c/d"), 2);
+    EXPECT_EQ(client.subscription_qos_.at("e/f"), 1);
+}
