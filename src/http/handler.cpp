@@ -8,6 +8,18 @@
 
 namespace mcp_collab {
 
+// Apply CORS headers to a response. When `cors_origin` is empty, no CORS
+// headers are emitted — browsers then apply their default same-origin policy,
+// which is the correct behavior for an unconfigured CORS policy. An empty
+// `Access-Control-Allow-Origin` header would be worse than absent: browsers
+// treat it as "deny all cross-origin", breaking every CORS request.
+static void apply_cors(const StreamableHttpConfig& config, httplib::Response& res) {
+    if (config.cors_origin.empty()) return;
+    res.set_header("Access-Control-Allow-Origin", config.cors_origin);
+    res.set_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept");
+}
+
 RateLimiter::RateLimiter(int max_requests_per_minute) : max_rpm_(max_requests_per_minute) {}
 
 bool RateLimiter::allow(const std::string& key) {
@@ -90,13 +102,8 @@ StreamableHttpTransport::~StreamableHttpTransport() {
 void StreamableHttpTransport::setup_routes() {
     server_ = std::make_unique<httplib::Server>();
 
-    server_->set_default_headers({
-        {"Access-Control-Allow-Origin", config_.cors_origin},
-        {"Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, Accept"},
-    });
-
-    server_->Options(config_.endpoint, [](const httplib::Request&, httplib::Response& res) {
+    server_->Options(config_.endpoint, [this](const httplib::Request&, httplib::Response& res) {
+        apply_cors(config_, res);
         res.status = 204;
     });
 
@@ -112,7 +119,8 @@ void StreamableHttpTransport::setup_routes() {
         handle_delete(req, res);
     });
 
-    server_->Get("/health", [](const httplib::Request&, httplib::Response& res) {
+    server_->Get("/health", [this](const httplib::Request&, httplib::Response& res) {
+        apply_cors(config_, res);
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
@@ -154,6 +162,7 @@ bool StreamableHttpTransport::check_permission(const AuthToken& token, Permissio
 }
 
 void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::Response& res) {
+    apply_cors(config_, res);
     auto token = authenticate(req);
     if (!token) {
         res.status = 401;
@@ -233,6 +242,7 @@ void StreamableHttpTransport::handle_post(const httplib::Request& req, httplib::
 }
 
 void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::Response& res) {
+    apply_cors(config_, res);
     auto token = authenticate(req);
     if (!token) {
         res.status = 401;
@@ -307,6 +317,7 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
 }
 
 void StreamableHttpTransport::handle_delete(const httplib::Request& req, httplib::Response& res) {
+    apply_cors(config_, res);
     std::string session_id = req.get_header_value("Mcp-Session-Id");
     if (!session_id.empty()) {
         sse_.remove_client(session_id);

@@ -428,3 +428,49 @@ TEST_F(HttpHandlerTest, TransportStopOnNotRunningIsNoop) {
     transport.stop();
     EXPECT_FALSE(transport.is_running());
 }
+
+// ── CORS Header Tests ────────────────────────────────────────────────────────
+
+TEST_F(HttpHandlerTest, CorsOriginEmptyOmitsAccessControlAllowOriginHeader) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false, .cors_origin = ""});
+    httplib::Request req = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.get_header_value("Access-Control-Allow-Origin"), "");
+}
+
+TEST_F(HttpHandlerTest, CorsOriginSpecificSetsAccessControlAllowOriginHeader) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false, .cors_origin = "https://example.com"});
+    httplib::Request req = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.get_header_value("Access-Control-Allow-Origin"), "https://example.com");
+    EXPECT_EQ(res.get_header_value("Access-Control-Allow-Methods"), "GET, POST, DELETE, OPTIONS");
+    EXPECT_EQ(res.get_header_value("Access-Control-Allow-Headers"), "Content-Type, Authorization, Accept");
+}
+
+TEST_F(HttpHandlerTest, CorsOriginWildcardSetsAccessControlAllowOriginStar) {
+    StreamableHttpTransport transport(
+        *protocol_, *auth_,
+        StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
+                             .require_auth = false, .cors_origin = "*"});
+    httplib::Request req = make_request("POST", "/mcp",
+        R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
+    httplib::Response res;
+
+    transport.handle_post(req, res);
+
+    EXPECT_EQ(res.get_header_value("Access-Control-Allow-Origin"), "*");
+}

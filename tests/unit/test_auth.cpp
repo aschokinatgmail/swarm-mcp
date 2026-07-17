@@ -2,6 +2,7 @@
 #include "mcp_collab/auth.hpp"
 #include <chrono>
 #include <thread>
+#include <set>
 
 using namespace mcp_collab;
 
@@ -221,4 +222,30 @@ TEST_F(AuthTest, VerifySigConstantTimeCorrectAndTampered) {
     // 3. Wrong-length signature fails via the length early-return path
     std::string wrong_len_sig = correct_sig + "XX";
     EXPECT_FALSE(AuthProvider::verify_sig(payload, wrong_len_sig, secret));
+}
+
+// ── generate_secret (CSPRNG) ───────────────────────────────────────
+
+TEST_F(AuthTest, GenerateSecretLength) {
+    auto s = AuthProvider::generate_secret(32);
+    EXPECT_EQ(s.size(), 32u);
+}
+
+TEST_F(AuthTest, GenerateSecretCharset) {
+    auto s = AuthProvider::generate_secret(64);
+    for (char c : s) {
+        EXPECT_TRUE((c >= '0' && c <= '9') ||
+                    (c >= 'A' && c <= 'Z') ||
+                    (c >= 'a' && c <= 'z'))
+            << "Invalid character in secret: " << c;
+    }
+}
+
+TEST_F(AuthTest, GenerateSecretUniqueness) {
+    std::set<std::string> secrets;
+    for (int i = 0; i < 1000; ++i) {
+        auto [it, inserted] = secrets.insert(AuthProvider::generate_secret(32));
+        EXPECT_TRUE(inserted) << "Duplicate secret at iteration " << i;
+    }
+    EXPECT_EQ(secrets.size(), 1000u);
 }

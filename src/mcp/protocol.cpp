@@ -92,7 +92,7 @@ json McpProtocol::handle_request(const json& request) {
                 std::format("Forbidden: role '{}' insufficient for this tool", role_to_str(req.auth_role)));
         }
         auto result = handle_tools_call(req);
-        if (result.contains("code") && result.contains("message")) {
+        if (result.value("_is_error", false)) {
             return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
         }
         return req.id.has_value()
@@ -112,7 +112,7 @@ json McpProtocol::handle_request(const json& request) {
             return make_error_response(req, -32003, "Forbidden: insufficient role to read resources");
         }
         auto result = handle_resources_read(req);
-        if (result.contains("code") && result.contains("message")) {
+        if (result.value("_is_error", false)) {
             return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
         }
         return req.id.has_value()
@@ -145,7 +145,7 @@ json McpProtocol::handle_request(const json& request) {
             return make_error_response(req, -32003, "Forbidden: insufficient role to get prompts");
         }
         auto result = handle_prompts_get(req);
-        if (result.contains("code") && result.contains("message")) {
+        if (result.value("_is_error", false)) {
             return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());
         }
         return req.id.has_value()
@@ -274,19 +274,22 @@ json McpProtocol::handle_tools_call(const McpRequest& req) {
 
     auto it = tool_handlers_.find(name);
     if (it == tool_handlers_.end()) {
-        return {{"code", -32601}, {"message", std::format("Tool not found: {}", name)}};
+        return {{"_is_error", true}, {"code", -32601}, {"message", std::format("Tool not found: {}", name)}};
     }
 
     // Per-tool permission check
     auto def_it = tools_.find(name);
     if (def_it != tools_.end() && !has_permission(req.auth_role, def_it->second.required_permission)) {
-        return {{"code", -32003}, {"message",
+        return {{"_is_error", true}, {"code", -32003}, {"message",
             std::format("Forbidden: role '{}' lacks permission for tool '{}'",
                 role_to_str(req.auth_role), name)}};
     }
 
     try {
         json result = it->second(args);
+        if (result.is_object() && result.value("_is_error", false)) {
+            return result;
+        }
         return {{"content", json::array({{{"type", "text"}, {"text", result.dump()}}})}, {"isError", false}};
     } catch (const std::exception& e) {
         return {{"content", json::array({{{"type", "text"}, {"text", std::format("Error: {}", e.what())}}})}, {"isError", true}};
@@ -331,18 +334,21 @@ json McpProtocol::handle_resources_read(const McpRequest& req) {
     auto uri = req.params.value("uri", "");
     auto it = resource_handlers_.find(uri);
     if (it == resource_handlers_.end()) {
-        return {{"code", -32602}, {"message", std::format("Resource not found: {}", uri)}};
+        return {{"_is_error", true}, {"code", -32602}, {"message", std::format("Resource not found: {}", uri)}};
     }
 
     // Per-resource permission check
     auto def_it = resources_.find(uri);
     if (def_it != resources_.end() && !has_permission(req.auth_role, def_it->second.required_permission)) {
-        return {{"code", -32003}, {"message",
+        return {{"_is_error", true}, {"code", -32003}, {"message",
             std::format("Forbidden: role '{}' lacks permission for resource '{}'",
                 role_to_str(req.auth_role), uri)}};
     }
 
     json content = it->second(req.params);
+    if (content.is_object() && content.value("_is_error", false)) {
+        return content;
+    }
     return {{"contents", json::array({{{"uri", uri}, {"mimeType", "application/json"}, {"text", content.dump()}}})}};
 }
 
@@ -390,10 +396,13 @@ json McpProtocol::handle_prompts_get(const McpRequest& req) {
 
     auto it = prompt_handlers_.find(name);
     if (it == prompt_handlers_.end()) {
-        return {{"code", -32602}, {"message", std::format("Prompt not found: {}", name)}};
+        return {{"_is_error", true}, {"code", -32602}, {"message", std::format("Prompt not found: {}", name)}};
     }
 
     json content = it->second(args);
+    if (content.is_object() && content.value("_is_error", false)) {
+        return content;
+    }
     return {{"messages", content}};
 }
 

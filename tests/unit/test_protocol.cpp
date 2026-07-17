@@ -248,3 +248,42 @@ TEST_F(McpProtocolTest, PromptsGetWithAuth) {
     EXPECT_TRUE(resp.contains("result"));
     EXPECT_TRUE(resp["result"].contains("messages"));
 }
+
+// Regression: tool/resource/prompt results that happen to contain `code` and
+// `message` keys must NOT be misinterpreted as JSON-RPC errors. Detection now
+// relies on an explicit `_is_error` sentinel set only on actual errors.
+
+TEST_F(McpProtocolTest, ToolResultWithCodeMessageIsNotError) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    proto.register_tool({.name = "http_status", .description = "Returns HTTP status",
+        .input_schema = {{"type", "object"}}, .required_permission = Permission::TaskRead},
+        [](const json&) -> json { return {{"code", 200}, {"message", "OK"}}; });
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"http_status","_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_TRUE(resp.contains("result"));
+    EXPECT_FALSE(resp.contains("error"));
+    EXPECT_EQ(resp["result"]["isError"], false);
+    auto text = resp["result"]["content"][0]["text"].get<std::string>();
+    auto parsed = json::parse(text);
+    EXPECT_EQ(parsed["code"], 200);
+    EXPECT_EQ(parsed["message"], "OK");
+}
+
+TEST_F(McpProtocolTest, ToolResultWithErrorSentinelIsError) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    proto.register_tool({.name = "failing", .description = "Returns error sentinel",
+        .input_schema = {{"type", "object"}}, .required_permission = Permission::TaskRead},
+        [](const json&) -> json {
+            return {{"_is_error", true}, {"code", -1}, {"message", "fail"}};
+        });
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"failing","_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_TRUE(resp.contains("error"));
+    EXPECT_FALSE(resp.contains("result"));
+    EXPECT_EQ(resp["error"]["code"], -1);
+    EXPECT_EQ(resp["error"]["message"], "fail");
+}

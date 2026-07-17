@@ -27,12 +27,16 @@ bool topic_matches(const std::string& filter, const std::string& topic) {
 
     size_t fi = 0, ti = 0;
     while (fi < filter_parts.size() && ti < topic_parts.size()) {
-        if (filter_parts[fi] == "#") return true;
-        if (filter_parts[fi] != "+" && filter_parts[fi] != topic_parts[ti]) return false;
+        if (filter_parts[fi] == "#") return true;       // # matches rest
+        if (filter_parts[fi] == "+") { ++fi; ++ti; continue; }  // + matches one level
+        if (filter_parts[fi] != topic_parts[ti]) return false;
         ++fi; ++ti;
     }
 
-    return fi == filter_parts.size() && ti == topic_parts.size();
+    if (fi == filter_parts.size() && ti == topic_parts.size()) return true;
+    // Allow trailing /# to match zero levels at the end (e.g. a/b/# matches a/b)
+    if (fi < filter_parts.size() && filter_parts[fi] == "#" && ti == topic_parts.size()) return true;
+    return false;
 }
 
 }

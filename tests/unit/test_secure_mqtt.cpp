@@ -115,3 +115,54 @@ TEST_F(MqttTopicAuthTest, AddCustomRule) {
     EXPECT_TRUE(acl.can_publish(Role::Worker, "mcp-collab/test-swarm/custom/1"));
     EXPECT_FALSE(acl.can_publish(Role::Observer, "mcp-collab/test-swarm/custom/1"));
 }
+
+// ── Verified-callback wildcard dispatch tests ──────────────────────────
+// Regression: + single-level wildcard matching in SecureMqttClient's
+// verified-callback dispatch (secure_mqtt.cpp topic_matches).
+
+class VerifiedWildcardTest : public ::testing::Test {
+protected:
+    std::string secret = "wildcard-test-secret";
+    std::unique_ptr<SecureMqttClient> client;
+
+    void SetUp() override {
+        client = std::make_unique<SecureMqttClient>(MqttConfig{}, "default", secret);
+    }
+
+    // Subscribe with a pattern, inject a signed envelope on the given topic,
+    // return whether the verified callback was invoked.
+    bool dispatch_invoked(const std::string& pattern, const std::string& topic) {
+        bool invoked = false;
+        client->subscribe_verified(pattern, 1, [&](const MqttEnvelope&) {
+            invoked = true;
+        });
+        auto envelope = MqttEnvelope::sign("agent-1", "default", Role::Worker,
+                                            {{"x", 1}}, secret);
+        client->raw_client().inject_message(topic, envelope.to_json().dump());
+        return invoked;
+    }
+};
+
+TEST_F(VerifiedWildcardTest, PlusMatchesSingleLevel) {
+    EXPECT_TRUE(dispatch_invoked("mcp-collab/+/events", "mcp-collab/swarm-1/events"));
+}
+
+TEST_F(VerifiedWildcardTest, PlusRejectsTooManyLevels) {
+    EXPECT_FALSE(dispatch_invoked("mcp-collab/+/events", "mcp-collab/swarm-1/sub/events"));
+}
+
+TEST_F(VerifiedWildcardTest, PlusRejectsMissingLevel) {
+    EXPECT_FALSE(dispatch_invoked("mcp-collab/+/events", "mcp-collab/events"));
+}
+
+TEST_F(VerifiedWildcardTest, PlusAtStart) {
+    EXPECT_TRUE(dispatch_invoked("+/events", "swarm-1/events"));
+}
+
+TEST_F(VerifiedWildcardTest, PlusAtEnd) {
+    EXPECT_TRUE(dispatch_invoked("mcp-collab/+", "mcp-collab/swarm-1"));
+}
+
+TEST_F(VerifiedWildcardTest, PlusAndHashCombined) {
+    EXPECT_TRUE(dispatch_invoked("mcp-collab/+/events/#", "mcp-collab/swarm-1/events/foo"));
+}

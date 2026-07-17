@@ -4,7 +4,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
-#include <random>
+#include <array>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -187,14 +187,28 @@ std::optional<AuthToken> AuthProvider::refresh_token(const std::string& token_st
 }
 
 std::string AuthProvider::generate_secret(size_t length) {
-    static const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<size_t> dist(0, sizeof(charset) - 2);
+    static constexpr char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    constexpr unsigned char charset_size = sizeof(charset) - 1;
+    // Rejection sampling threshold: values >= limit are discarded to
+    // eliminate modulo bias when mapping random bytes to the charset.
+    constexpr unsigned char limit = 256 - (256 % charset_size);
+
     std::string secret;
     secret.reserve(length);
-    for (size_t i = 0; i < length; ++i) {
-        secret += charset[dist(gen)];
+    while (secret.size() < length) {
+        std::array<unsigned char, 256> buf{};
+        size_t needed = length - secret.size();
+        std::span batch_span{buf.data(), needed < buf.size() ? needed : buf.size()};
+        if (!mcp_collab::csprng_bytes(batch_span)) {
+            spdlog::error("OpenSSL RAND_bytes failed in generate_secret");
+            return {};
+        }
+        for (auto byte : batch_span) {
+            if (secret.size() >= length) break;
+            if (byte < limit) {
+                secret += charset[byte % charset_size];
+            }
+        }
     }
     return secret;
 }

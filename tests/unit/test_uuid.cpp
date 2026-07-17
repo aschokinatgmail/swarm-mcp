@@ -3,6 +3,7 @@
 #include <set>
 #include <thread>
 #include <vector>
+#include <regex>
 
 using namespace mcp_collab;
 
@@ -23,12 +24,24 @@ TEST(UUIDTest, FormatCorrect) {
     EXPECT_TRUE(id[19] == '8' || id[19] == '9' || id[19] == 'a' || id[19] == 'b');
 }
 
+TEST(UUIDTest, FormatMatchesV4Regex) {
+    // RFC 4122 v4 UUID: version nibble = 4, variant nibble = 8/9/a/b
+    std::regex v4_pattern(
+        R"(^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$)");
+    for (int i = 0; i < 100; ++i) {
+        auto id = generate_uuid();
+        EXPECT_TRUE(std::regex_match(id, v4_pattern))
+            << "UUID " << id << " does not match v4 format";
+    }
+}
+
 TEST(UUIDTest, Uniqueness) {
     std::set<std::string> ids;
     for (int i = 0; i < 10000; ++i) {
         auto result = ids.insert(generate_uuid());
         EXPECT_TRUE(result.second) << "Duplicate UUID generated at iteration " << i;
     }
+    EXPECT_EQ(ids.size(), 10000u);
 }
 
 TEST(UUIDTest, ThreadSafety) {
