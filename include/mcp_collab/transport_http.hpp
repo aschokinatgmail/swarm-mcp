@@ -23,13 +23,13 @@ namespace mcp_collab {
 inline constexpr std::size_t kMaxSseQueueEntries = 1024;
 
 struct StreamableHttpConfig {
-    std::string host{"0.0.0.0"};
+    std::string host{"127.0.0.1"};
     uint16_t port{3001};
     std::string endpoint{"/mcp"};
     std::string cors_origin{""};
     int thread_pool_size{4};
     bool require_auth{true};
-    int rate_limit_rpm{0};
+    int rate_limit_rpm{60};
 };
 
 class RateLimiter {

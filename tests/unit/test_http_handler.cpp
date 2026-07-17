@@ -281,6 +281,41 @@ TEST_F(HttpHandlerTest, RateLimitResetsAfterWindowExpiry) {
     EXPECT_EQ(res2.status, 429);
 }
 
+TEST_F(HttpHandlerTest, RateLimitEnforcedWithDefaultConfig) {
+    // Verify that the secure-by-default rate_limit_rpm (60) is actually
+    // enforced — a burst exceeding the limit gets throttled (#79).
+    StreamableHttpConfig config;
+    ASSERT_GT(config.rate_limit_rpm, 0)
+        << "Default rate_limit_rpm must be > 0";
+
+    StreamableHttpTransport transport(*protocol_, *auth_, config);
+
+    auto token = auth_->issue_token("burst-agent", Role::Worker, "test-swarm");
+    std::string auth_hdr = "Bearer " + token.token_string;
+
+    int allowed = 0;
+    int throttled = 0;
+    for (int i = 0; i < config.rate_limit_rpm + 10; ++i) {
+        httplib::Request req = make_request("POST", "/mcp",
+            R"({"jsonrpc":"2.0","id":)" + std::to_string(i) + R"(,"method":"ping"})",
+            auth_hdr);
+        httplib::Response res;
+        transport.handle_post(req, res);
+        if (res.status == 429) {
+            ++throttled;
+        } else {
+            ++allowed;
+        }
+    }
+
+    EXPECT_EQ(allowed, config.rate_limit_rpm)
+        << "Exactly rate_limit_rpm requests should be allowed";
+    EXPECT_GT(throttled, 0)
+        << "Requests beyond the limit must be throttled (429)";
+    EXPECT_EQ(throttled, 10)
+        << "The 10 requests beyond the limit should all be throttled";
+}
+
 // ── Single Notification (no id) Tests ──────────────────────────────────────────
 
 TEST_F(HttpHandlerTest, PostNotificationReturns202) {

@@ -24,7 +24,7 @@ void print_usage(const char* prog) {
         "Usage: {} [OPTIONS]\n\n"
         "Options:\n"
         "  -c, --config <path>        Config file path (default: config/default.json)\n"
-        "  -H, --host <addr>          HTTP listen address (default: 0.0.0.0)\n"
+        "  -H, --host <addr>          HTTP listen address (default: 127.0.0.1)\n"
         "  -p, --port <port>          HTTP listen port (default: 3001)\n"
         "  -m, --mqtt <host>          MQTT broker address (default: localhost)\n"
         "  -M, --mqtt-port <port>     MQTT broker port (default: 1883)\n"
@@ -148,12 +148,15 @@ int main(int argc, char* argv[]) {
     config.swarm.secret = pick_str(config.swarm.secret, env_config.swarm.secret, file_config.swarm.secret, "");
     config.mqtt.host = pick_str(config.mqtt.host, env_config.mqtt.host, file_config.mqtt.host, "localhost");
     config.mqtt.port = pick_uint(config.mqtt.port, 1883, env_config.mqtt.port, file_config.mqtt.port, 1883);
-    config.http.host = pick_str(config.http.host, env_config.http.host, file_config.http.host, "0.0.0.0");
+    config.http.host = pick_str(config.http.host, env_config.http.host, file_config.http.host, "127.0.0.1");
     config.http.port = pick_uint(config.http.port, 3001, env_config.http.port, file_config.http.port, 3001);
     config.http.endpoint = pick_str(config.http.endpoint, env_config.http.endpoint, file_config.http.endpoint, "/mcp");
     config.git.repo_path = pick_str(config.git.repo_path, env_config.git.repo_path, file_config.git.repo_path, "");
     config.git.branch_prefix = pick_str(config.git.branch_prefix, "", file_config.git.branch_prefix, "collab/");
-    config.http.require_auth = env_config.http.require_auth ? env_config.http.require_auth : file_config.http.require_auth;
+    config.http.require_auth = mcp_collab::ServerConfig::resolve_require_auth(env_config.http.require_auth_env, file_config.http.require_auth);
+    config.http.rate_limit_rpm = env_config.http.rate_limit_rpm
+        ? env_config.http.rate_limit_rpm
+        : (file_config.http.rate_limit_rpm ? file_config.http.rate_limit_rpm : 60);
 
     if (no_auth) {
         config.http.require_auth = false;

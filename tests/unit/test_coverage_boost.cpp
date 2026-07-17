@@ -788,7 +788,7 @@ TEST(ChannelExtra, TypePrefixAllTypes) {
 TEST(ConfigExtra, DefaultValues) {
     ServerConfig cfg;
     EXPECT_EQ(cfg.server_name, "swarm-mcp");
-    EXPECT_EQ(cfg.http.host, "0.0.0.0");
+    EXPECT_EQ(cfg.http.host, "127.0.0.1");
     EXPECT_EQ(cfg.http.port, 3001);
     EXPECT_EQ(cfg.http.endpoint, "/mcp");
     EXPECT_EQ(cfg.http.require_auth, true);
@@ -1411,6 +1411,6 @@ TEST(ConfigBranch, FromNonexistentFile) {
 TEST(ConfigBranch, FromEnvDefaults) {
     auto cfg = ServerConfig::from_env();
     EXPECT_EQ(cfg.server_name, "swarm-mcp");
-    EXPECT_EQ(cfg.http.host, "0.0.0.0");
+    EXPECT_EQ(cfg.http.host, "127.0.0.1");
     EXPECT_EQ(cfg.mqtt.host, "localhost");
 }

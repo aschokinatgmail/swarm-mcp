@@ -27,7 +27,7 @@ TEST_F(ConfigTest, DefaultConfig) {
     EXPECT_EQ(cfg.server_name, "swarm-mcp");
     EXPECT_EQ(cfg.mqtt.host, "localhost");
     EXPECT_EQ(cfg.mqtt.port, 1883);
-    EXPECT_EQ(cfg.http.host, "0.0.0.0");
+    EXPECT_EQ(cfg.http.host, "127.0.0.1");
     EXPECT_EQ(cfg.http.port, 3001);
     EXPECT_EQ(cfg.http.require_auth, true);
     EXPECT_EQ(cfg.http.endpoint, "/mcp");
@@ -208,4 +208,53 @@ TEST_F(ConfigTest, ValidPathsUnderAllowlistAccepted) {
     write_config(R"({"server_name": "temp-test"})");
     auto cfg = ServerConfig::from_file(test_config_path);
     EXPECT_EQ(cfg.server_name, "temp-test");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// require_auth precedence tests (C10)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_F(ConfigTest, RequireAuthPrecedence_EnvOverridesFile) {
+    // env true overrides file false
+    EXPECT_TRUE(ServerConfig::resolve_require_auth(std::optional<bool>(true), false));
+    // env false overrides file true
+    EXPECT_FALSE(ServerConfig::resolve_require_auth(std::optional<bool>(false), true));
+}
+
+TEST_F(ConfigTest, RequireAuthPrecedence_NoEnvUsesFile) {
+    // no env → file value used
+    EXPECT_TRUE(ServerConfig::resolve_require_auth(std::nullopt, true));
+    EXPECT_FALSE(ServerConfig::resolve_require_auth(std::nullopt, false));
+}
+
+TEST_F(ConfigTest, RequireAuthPrecedence_EnvTrueFileTrue) {
+    EXPECT_TRUE(ServerConfig::resolve_require_auth(std::optional<bool>(true), true));
+}
+
+TEST_F(ConfigTest, RequireAuthPrecedence_EnvFalseFileFalse) {
+    EXPECT_FALSE(ServerConfig::resolve_require_auth(std::optional<bool>(false), false));
+}
+
+TEST_F(ConfigTest, RequireAuthPrecedence_DefaultBothUnset) {
+    // no env, file default (true) → true
+    EXPECT_TRUE(ServerConfig::resolve_require_auth(std::nullopt, true));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Default config tests (C11)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_F(ConfigTest, DefaultConfigHostIsLoopback) {
+    ServerConfig cfg;
+    EXPECT_EQ(cfg.http.host, "127.0.0.1");
+}
+
+TEST_F(ConfigTest, DefaultConfigRateLimitRpm) {
+    ServerConfig cfg;
+    EXPECT_EQ(cfg.http.rate_limit_rpm, 60);
+}
+
+TEST_F(ConfigTest, DefaultConfigRequireAuthEnvEmpty) {
+    ServerConfig cfg;
+    EXPECT_FALSE(cfg.http.require_auth_env.has_value());
 }

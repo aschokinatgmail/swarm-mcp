@@ -130,94 +130,129 @@ std::optional<Task> TaskManager::get_task(const std::string& id) const {
 }
 
 bool TaskManager::update_task(const std::string& id, const Task& task) {
-    std::unique_lock lock(mutex_);
-    auto it = tasks_.find(id);
-    if (it == tasks_.end()) return false;
+    Task snapshot;
+    bool changed = false;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = tasks_.find(id);
+        if (it == tasks_.end()) return false;
 
-    it->second = task;
-    it->second.updated_at = std::chrono::system_clock::now();
-    notify("task.updated", it->second);
+        it->second = task;
+        it->second.updated_at = std::chrono::system_clock::now();
+        snapshot = it->second;
+        changed = true;
+    }
+    if (changed) notify("task.updated", snapshot);
     return true;
 }
 
 bool TaskManager::delete_task(const std::string& id) {
-    std::unique_lock lock(mutex_);
-    auto it = tasks_.find(id);
-    if (it == tasks_.end()) return false;
+    Task snapshot;
+    bool changed = false;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = tasks_.find(id);
+        if (it == tasks_.end()) return false;
 
-    Task task = it->second;
-    tasks_.erase(it);
-    notify("task.deleted", task);
+        snapshot = it->second;
+        tasks_.erase(it);
+        changed = true;
+    }
+    if (changed) notify("task.deleted", snapshot);
     return true;
 }
 
 bool TaskManager::assign_task(const std::string& id, const std::string& agent_id) {
-    std::unique_lock lock(mutex_);
-    auto it = tasks_.find(id);
-    if (it == tasks_.end()) return false;
+    Task snapshot;
+    bool changed = false;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = tasks_.find(id);
+        if (it == tasks_.end()) return false;
 
-    it->second.assignee = agent_id;
-    it->second.status = TaskStatus::InProgress;
-    it->second.updated_at = std::chrono::system_clock::now();
-    notify("task.assigned", it->second);
+        it->second.assignee = agent_id;
+        it->second.status = TaskStatus::InProgress;
+        it->second.updated_at = std::chrono::system_clock::now();
+        snapshot = it->second;
+        changed = true;
+    }
+    if (changed) notify("task.assigned", snapshot);
     return true;
 }
 
 bool TaskManager::set_status(const std::string& id, TaskStatus status) {
-    std::unique_lock lock(mutex_);
-    auto it = tasks_.find(id);
-    if (it == tasks_.end()) return false;
+    Task snapshot;
+    bool changed = false;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = tasks_.find(id);
+        if (it == tasks_.end()) return false;
 
-    it->second.status = status;
-    it->second.updated_at = std::chrono::system_clock::now();
+        it->second.status = status;
+        it->second.updated_at = std::chrono::system_clock::now();
 
-    if (status == TaskStatus::Completed) {
-        it->second.completed_at = std::chrono::system_clock::now();
+        if (status == TaskStatus::Completed) {
+            it->second.completed_at = std::chrono::system_clock::now();
+        }
+
+        snapshot = it->second;
+        changed = true;
     }
-
-    notify("task.status_changed", it->second);
+    if (changed) notify("task.status_changed", snapshot);
     return true;
 }
 
 bool TaskManager::add_dependency(const std::string& id, const std::string& dep_id) {
-    std::unique_lock lock(mutex_);
-    auto it = tasks_.find(id);
-    if (it == tasks_.end()) return false;
-    if (tasks_.find(dep_id) == tasks_.end()) return false; // dependency must exist
+    Task snapshot;
+    bool changed = false;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = tasks_.find(id);
+        if (it == tasks_.end()) return false;
+        if (tasks_.find(dep_id) == tasks_.end()) return false; // dependency must exist
 
-    // Self-dependency
-    if (id == dep_id) {
-        spdlog::warn("Cannot add self-dependency: task={} dep={}", id, dep_id);
-        return false;
-    }
+        // Self-dependency
+        if (id == dep_id) {
+            spdlog::warn("Cannot add self-dependency: task={} dep={}", id, dep_id);
+            return false;
+        }
 
-    // Circular dependency check
-    if (would_create_cycle(id, dep_id)) {
-        spdlog::warn("Circular dependency detected: task={} dep={}", id, dep_id);
-        return false;
-    }
+        // Circular dependency check
+        if (would_create_cycle(id, dep_id)) {
+            spdlog::warn("Circular dependency detected: task={} dep={}", id, dep_id);
+            return false;
+        }
 
-    auto& deps = it->second.dependencies;
-    if (std::ranges::find(deps, dep_id) == deps.end()) {
-        deps.push_back(dep_id);
-        it->second.updated_at = std::chrono::system_clock::now();
-        notify("task.dependency_added", it->second);
+        auto& deps = it->second.dependencies;
+        if (std::ranges::find(deps, dep_id) == deps.end()) {
+            deps.push_back(dep_id);
+            it->second.updated_at = std::chrono::system_clock::now();
+            snapshot = it->second;
+            changed = true;
+        }
     }
+    if (changed) notify("task.dependency_added", snapshot);
     return true;
 }
 
 bool TaskManager::remove_dependency(const std::string& id, const std::string& dep_id) {
-    std::unique_lock lock(mutex_);
-    auto it = tasks_.find(id);
-    if (it == tasks_.end()) return false;
+    Task snapshot;
+    bool changed = false;
+    {
+        std::unique_lock lock(mutex_);
+        auto it = tasks_.find(id);
+        if (it == tasks_.end()) return false;
 
-    auto& deps = it->second.dependencies;
-    auto dep_it = std::ranges::find(deps, dep_id);
-    if (dep_it != deps.end()) {
-        deps.erase(dep_it);
-        it->second.updated_at = std::chrono::system_clock::now();
-        notify("task.dependency_removed", it->second);
+        auto& deps = it->second.dependencies;
+        auto dep_it = std::ranges::find(deps, dep_id);
+        if (dep_it != deps.end()) {
+            deps.erase(dep_it);
+            it->second.updated_at = std::chrono::system_clock::now();
+            snapshot = it->second;
+            changed = true;
+        }
     }
+    if (changed) notify("task.dependency_removed", snapshot);
     return true;
 }
 

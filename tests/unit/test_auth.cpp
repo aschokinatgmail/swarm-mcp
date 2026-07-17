@@ -180,6 +180,21 @@ TEST_F(AuthTest, HmacConsistency) {
     EXPECT_FALSE(hmac1.empty());
 }
 
+// Regression for issue #115: the EVP_MAC-based compute_hmac must produce
+// byte-identical output to the legacy HMAC() one-shot for the same input.
+// This known-answer test pins the exact HMAC-SHA256 hex string so any
+// future API migration that silently changes the digest is caught.
+TEST_F(AuthTest, HmacKnownVectorEvpMac) {
+    auto hmac = compute_hmac("test-data", secret);
+    EXPECT_EQ(hmac.size(), 64u);
+    EXPECT_EQ(hmac, "375ee2f4e5987533524d957b6c5ffc90882dba01124dac74423a892eae0a3a6a");
+}
+
+TEST_F(AuthTest, HmacKnownVectorSimpleInput) {
+    auto hmac = compute_hmac("hello", "secret");
+    EXPECT_EQ(hmac, "88aab3ede8d3adf94d26ab90d3bafd4a2083070c3bcce9c014ee04a443847c0b");
+}
+
 TEST_F(AuthTest, HmacDifferentInputs) {
     auto hmac1 = compute_hmac("data-1", secret);
     auto hmac2 = compute_hmac("data-2", secret);
@@ -202,6 +217,36 @@ TEST_F(AuthTest, AuthTokenToJson) {
     EXPECT_EQ(j["agent_id"], "agent-1");
     EXPECT_EQ(j["role"], "worker");
     EXPECT_EQ(j["swarm_id"], "swarm-1");
+}
+
+// Regression for issue #114: a token issued with a known TTL must have
+// expires_at == issued_at + ttl (not the epoch 1970). The previous code
+// left expires_at default-constructed to the epoch when a token was
+// created without going through issue_token.
+TEST_F(AuthTest, TokenExpiryIsIssuedAtPlusTtl) {
+    auto ttl = std::chrono::seconds(3600);
+    auto before = std::chrono::system_clock::now();
+    auto token = provider->issue_token("agent-ttl", Role::Worker, "swarm-ttl", ttl);
+    auto after = std::chrono::system_clock::now();
+
+    auto expected_earliest = before + ttl;
+    auto expected_latest = after + ttl;
+    EXPECT_GE(token.expires_at, expected_earliest);
+    EXPECT_LE(token.expires_at, expected_latest);
+    EXPECT_FALSE(token.is_expired());
+}
+
+// Regression for issue #114: a default-constructed AuthToken must not
+// report expires_at as the epoch (1970-01-01). The default should be a
+// semantically valid future time so is_expired() returns false.
+TEST_F(AuthTest, DefaultConstructedTokenNotEpochExpired) {
+    AuthToken token;
+    auto epoch = std::chrono::system_clock::time_point{};
+    EXPECT_NE(token.expires_at, epoch);
+    EXPECT_FALSE(token.is_expired());
+    auto j = token.to_json();
+    auto expires_ms = j["expires_at"].get<long long>();
+    EXPECT_GT(expires_ms, 0LL);
 }
 
 // ── Constant-time signature verification ──────────────────────────

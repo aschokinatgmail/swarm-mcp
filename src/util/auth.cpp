@@ -12,7 +12,9 @@
 #pragma comment(lib, "bcrypt.lib")
 #else
 #include <openssl/evp.h>
-#include <openssl/hmac.h>
+#include <openssl/core_names.h>
+#include <openssl/params.h>
+#include <openssl/crypto.h>
 #endif
 
 namespace mcp_collab {
@@ -54,14 +56,46 @@ std::string compute_hmac(const std::string& data, const std::string& secret) {
     for (auto b : digest) oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(b);
     return oss.str();
 #else
-    unsigned int md_len = 32;
-    unsigned char digest[EVP_MAX_MD_SIZE];
-    auto* ctx = HMAC(EVP_sha256(), secret.data(), static_cast<int>(secret.size()),
-        reinterpret_cast<const unsigned char*>(data.data()), data.size(), digest, &md_len);
+    // OpenSSL 3.0+ EVP_MAC API (replaces the deprecated HMAC() one-shot).
+    // Fetch the HMAC MAC implementation, build a per-call context, and
+    // compute HMAC-SHA256(data, secret). The output is byte-identical to
+    // the legacy HMAC(EVP_sha256(), ...) call.
+    auto mac_deleter = [](EVP_MAC* m) { EVP_MAC_free(m); };
+    std::unique_ptr<EVP_MAC, decltype(mac_deleter)> mac(
+        EVP_MAC_fetch(nullptr, "HMAC", nullptr), mac_deleter);
+    if (!mac) return {};
+
+    auto ctx_deleter = [](EVP_MAC_CTX* c) { EVP_MAC_CTX_free(c); };
+    std::unique_ptr<EVP_MAC_CTX, decltype(ctx_deleter)> ctx(
+        EVP_MAC_CTX_new(mac.get()), ctx_deleter);
     if (!ctx) return {};
 
+    // Select the SHA-256 digest for this HMAC instance.
+    OSSL_PARAM params[2];
+    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST,
+                                                   const_cast<char*>("SHA256"), 0);
+    params[1] = OSSL_PARAM_construct_end();
+
+    if (!EVP_MAC_init(ctx.get(),
+                      reinterpret_cast<const unsigned char*>(secret.data()),
+                      secret.size(), params)) {
+        return {};
+    }
+
+    if (!EVP_MAC_update(ctx.get(),
+                        reinterpret_cast<const unsigned char*>(data.data()),
+                        data.size())) {
+        return {};
+    }
+
+    unsigned char digest[EVP_MAX_MD_SIZE];
+    size_t md_len = 0;
+    if (!EVP_MAC_final(ctx.get(), digest, &md_len, sizeof(digest))) {
+        return {};
+    }
+
     std::ostringstream oss;
-    for (unsigned int i = 0; i < md_len; i++) {
+    for (size_t i = 0; i < md_len; i++) {
         oss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(digest[i]);
     }
     return oss.str();

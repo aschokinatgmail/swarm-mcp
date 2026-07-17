@@ -92,13 +92,15 @@ TEST_F(ConfigEnvTest, HttpOverrides) {
     EXPECT_EQ(cfg.http.host, "0.0.0.0");
     EXPECT_EQ(cfg.http.port, 9090);
     EXPECT_EQ(cfg.http.endpoint, "/api");
-    EXPECT_TRUE(cfg.http.require_auth);
+    ASSERT_TRUE(cfg.http.require_auth_env.has_value());
+    EXPECT_TRUE(*cfg.http.require_auth_env);
 }
 
 TEST_F(ConfigEnvTest, HttpAuthFalse) {
     set_env("SWARM_HTTP_AUTH", "0");
     auto cfg = ServerConfig::from_env();
-    EXPECT_FALSE(cfg.http.require_auth);
+    ASSERT_TRUE(cfg.http.require_auth_env.has_value());
+    EXPECT_FALSE(*cfg.http.require_auth_env);
 }
 
 TEST_F(ConfigEnvTest, GitRepoPath) {

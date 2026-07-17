@@ -111,6 +111,7 @@ ServerConfig ServerConfig::from_file(const std::string& path) {
             if (h.contains("cors_origin")) cfg.http.cors_origin = h["cors_origin"].get<std::string>();
             if (h.contains("thread_pool_size")) cfg.http.thread_pool_size = h["thread_pool_size"].get<int>();
             if (h.contains("require_auth")) cfg.http.require_auth = h["require_auth"].get<bool>();
+            if (h.contains("rate_limit_rpm")) cfg.http.rate_limit_rpm = h["rate_limit_rpm"].get<int>();
         }
 
         if (j.contains("git")) {
@@ -172,7 +173,13 @@ ServerConfig ServerConfig::from_env() {
     if (env_val) cfg.http.endpoint = env_val;
 
     env_val = std::getenv("SWARM_HTTP_AUTH");
-    if (env_val) cfg.http.require_auth = (std::string(env_val) == "true" || std::string(env_val) == "1");
+    if (env_val) cfg.http.require_auth_env = (std::string(env_val) == "true" || std::string(env_val) == "1");
+
+    env_val = std::getenv("SWARM_RATE_LIMIT_RPM");
+    if (env_val) {
+        try { cfg.http.rate_limit_rpm = std::stoi(env_val); }
+        catch (const std::exception& e) { spdlog::warn("Invalid SWARM_RATE_LIMIT_RPM='{}': {}", env_val, e.what()); }
+    }
 
     env_val = std::getenv("SWARM_GIT_REPO_PATH");
     if (env_val) cfg.git.repo_path = env_val;
@@ -190,6 +197,11 @@ ServerConfig ServerConfig::from_env() {
     }
 
     return cfg;
+}
+
+bool ServerConfig::resolve_require_auth(const std::optional<bool>& env_val, bool file_val) {
+    if (env_val.has_value()) return *env_val;
+    return file_val;
 }
 
 }

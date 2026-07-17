@@ -3,6 +3,7 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 #include "mcp_collab/auth.hpp"
 
@@ -20,12 +21,14 @@ struct MqttConfig {
 };
 
 struct HttpConfig {
-    std::string host{"0.0.0.0"};
+    std::string host{"127.0.0.1"};
     uint16_t port{3001};
     std::string endpoint{"/mcp"};
     int thread_pool_size{4};
     std::string cors_origin{"*"};
     bool require_auth{true};
+    std::optional<bool> require_auth_env{};
+    int rate_limit_rpm{60};
 };
 
 struct GitConfig {
@@ -55,6 +58,7 @@ struct ServerConfig {
 
     static ServerConfig from_file(const std::string& path);
     static ServerConfig from_env();
+    static bool resolve_require_auth(const std::optional<bool>& env_val, bool file_val);
 };
 
 }

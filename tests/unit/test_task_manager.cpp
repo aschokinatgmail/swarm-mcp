@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include "mcp_collab/task_manager.hpp"
 #include <thread>
+#include <atomic>
+#include <future>
+#include <chrono>
 
 using namespace mcp_collab;
 
@@ -182,4 +185,54 @@ TEST_F(TaskManagerTest, PriorityStringConversion) {
     EXPECT_EQ(task_priority_from_str("low"), TaskPriority::Low);
     EXPECT_EQ(task_priority_from_str("critical"), TaskPriority::Critical);
     EXPECT_EQ(task_priority_from_str("unknown"), TaskPriority::Medium);
+}
+
+// Regression for #56: update_task() must call notify() outside the write
+// lock so a callback that re-enters TaskManager (acquiring the shared lock
+// via get_task) cannot deadlock. Runs update_task() on a worker thread with
+// a timeout; if the lock is still held during notify, get_task() inside the
+// callback blocks forever.
+TEST_F(TaskManagerTest, UpdateTaskNotifyCallbackReentryDoesNotDeadlock) {
+    auto task = tm.create_task("Deadlock test", "agent-1");
+    std::atomic<bool> callback_saw_update{false};
+    tm.on_task_event([&](const std::string& ev, const Task& t) {
+        if (ev != "task.updated") return;
+        // Re-enter TaskManager under the shared lock — would deadlock if
+        // notify() were called while the unique_lock is still held.
+        auto fetched = tm.get_task(t.id);
+        if (fetched.has_value() && fetched->description == "updated-desc") {
+            callback_saw_update = true;
+        }
+    });
+
+    task.description = "updated-desc";
+    auto fut = std::async(std::launch::async, [this, &task]() {
+        tm.update_task(task.id, task);
+    });
+    ASSERT_EQ(fut.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "TaskManager::update_task deadlocked when notify callback re-entered get_task()";
+    EXPECT_TRUE(callback_saw_update.load());
+    EXPECT_EQ(tm.get_task(task.id)->description, "updated-desc");
+}
+
+// Regression for #56 on set_status(): same reentry pattern, must not
+// deadlock because notify() is emitted after the write lock releases.
+TEST_F(TaskManagerTest, SetStatusNotifyCallbackReentryDoesNotDeadlock) {
+    auto task = tm.create_task("Status deadlock test", "agent-1");
+    std::atomic<bool> callback_saw_status{false};
+    tm.on_task_event([&](const std::string& ev, const Task& t) {
+        if (ev != "task.status_changed") return;
+        auto fetched = tm.get_task(t.id);
+        if (fetched.has_value() && fetched->status == TaskStatus::Completed) {
+            callback_saw_status = true;
+        }
+    });
+
+    auto fut = std::async(std::launch::async, [this, &task]() {
+        tm.set_status(task.id, TaskStatus::Completed);
+    });
+    ASSERT_EQ(fut.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "TaskManager::set_status deadlocked when notify callback re-entered get_task()";
+    EXPECT_TRUE(callback_saw_status.load());
+    EXPECT_EQ(tm.get_task(task.id)->status, TaskStatus::Completed);
 }

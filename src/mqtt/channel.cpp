@@ -1,6 +1,7 @@
 #include "mcp_collab/channel.hpp"
 #include <spdlog/spdlog.h>
 #include <format>
+#include <shared_mutex>
 
 namespace mcp_collab {
 
@@ -68,15 +69,19 @@ ChannelManager::ChannelManager(SecureMqttClient& mqtt, const std::string& ns,
 
 Channel& ChannelManager::get(ChannelType type, const std::string& name) {
     auto k = key(type, name);
+    std::unique_lock lock(channels_mutex_);
     auto it = channels_.find(k);
     if (it == channels_.end()) {
-        return create(type, name);
+        auto spec = ChannelSpec{.type = type, .namespace_ = namespace_, .name = name, .qos = 1};
+        auto [inserted, ok] = channels_.emplace(k, std::make_unique<Channel>(mqtt_, spec, swarm_id_));
+        return *inserted->second;
     }
     return *it->second;
 }
 
 Channel& ChannelManager::create(ChannelType type, const std::string& name, int qos) {
     auto k = key(type, name);
+    std::unique_lock lock(channels_mutex_);
     auto spec = ChannelSpec{.type = type, .namespace_ = namespace_, .name = name, .qos = qos};
     channels_[k] = std::make_unique<Channel>(mqtt_, spec, swarm_id_);
     return *channels_[k];
@@ -84,6 +89,7 @@ Channel& ChannelManager::create(ChannelType type, const std::string& name, int q
 
 void ChannelManager::remove(ChannelType type, const std::string& name) {
     auto k = key(type, name);
+    std::unique_lock lock(channels_mutex_);
     channels_.erase(k);
 }
 

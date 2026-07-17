@@ -1,5 +1,6 @@
 #include "mcp_collab/protocol.hpp"
 #include <spdlog/spdlog.h>
+#include <shared_mutex>
 
 namespace mcp_collab {
 
@@ -173,23 +174,27 @@ std::string McpProtocol::handle_raw(const std::string& raw_request) {
 
 void McpProtocol::register_tool(McpToolDef def, std::function<json(const json&)> handler) {
     auto name = def.name;
+    std::unique_lock lock(maps_mutex_);
     tools_[name] = std::move(def);
     tool_handlers_[name] = std::move(handler);
 }
 
 void McpProtocol::register_resource(McpResourceDef def, std::function<json(const json&)> handler) {
     auto uri = def.uri;
+    std::unique_lock lock(maps_mutex_);
     resources_[uri] = std::move(def);
     resource_handlers_[uri] = std::move(handler);
 }
 
 void McpProtocol::register_prompt(McpPromptDef def, std::function<json(const json&)> handler) {
     auto name = def.name;
+    std::unique_lock lock(maps_mutex_);
     prompts_[name] = std::move(def);
     prompt_handlers_[name] = std::move(handler);
 }
 
 void McpProtocol::set_notification_handler(const std::string& method, std::function<void(const json&)> handler) {
+    std::unique_lock lock(maps_mutex_);
     notification_handlers_[method] = std::move(handler);
 }
 
@@ -241,6 +246,7 @@ json McpProtocol::handle_tools_list(const McpRequest& req) {
     json tools = json::array();
     int i = 0;
     int count = 0;
+    std::shared_lock lock(maps_mutex_);
     for (const auto& entry : tools_) {
         const auto& name = entry.first;
         const auto& def = entry.second;
@@ -272,21 +278,26 @@ json McpProtocol::handle_tools_call(const McpRequest& req) {
         args["_auth"] = req.params["_auth"];
     }
 
-    auto it = tool_handlers_.find(name);
-    if (it == tool_handlers_.end()) {
-        return {{"_is_error", true}, {"code", -32601}, {"message", std::format("Tool not found: {}", name)}};
-    }
-
-    // Per-tool permission check
-    auto def_it = tools_.find(name);
-    if (def_it != tools_.end() && !has_permission(req.auth_role, def_it->second.required_permission)) {
-        return {{"_is_error", true}, {"code", -32003}, {"message",
-            std::format("Forbidden: role '{}' lacks permission for tool '{}'",
-                role_to_str(req.auth_role), name)}};
+    // Look up handler + permission under shared lock, then release before
+    // invoking the handler (avoids deadlock if handler re-enters protocol).
+    std::function<json(const json&)> handler;
+    {
+        std::shared_lock lock(maps_mutex_);
+        auto it = tool_handlers_.find(name);
+        if (it == tool_handlers_.end()) {
+            return {{"_is_error", true}, {"code", -32601}, {"message", std::format("Tool not found: {}", name)}};
+        }
+        auto def_it = tools_.find(name);
+        if (def_it != tools_.end() && !has_permission(req.auth_role, def_it->second.required_permission)) {
+            return {{"_is_error", true}, {"code", -32003}, {"message",
+                std::format("Forbidden: role '{}' lacks permission for tool '{}'",
+                    role_to_str(req.auth_role), name)}};
+        }
+        handler = it->second;
     }
 
     try {
-        json result = it->second(args);
+        json result = handler(args);
         if (result.is_object() && result.value("_is_error", false)) {
             return result;
         }
@@ -307,6 +318,7 @@ json McpProtocol::handle_resources_list(const McpRequest& req) {
     json res = json::array();
     int i = 0;
     int count = 0;
+    std::shared_lock lock(maps_mutex_);
     for (const auto& entry : resources_) {
         const auto& uri = entry.first;
         const auto& def = entry.second;
@@ -332,20 +344,24 @@ json McpProtocol::handle_resources_list(const McpRequest& req) {
 
 json McpProtocol::handle_resources_read(const McpRequest& req) {
     auto uri = req.params.value("uri", "");
-    auto it = resource_handlers_.find(uri);
-    if (it == resource_handlers_.end()) {
-        return {{"_is_error", true}, {"code", -32602}, {"message", std::format("Resource not found: {}", uri)}};
+    std::function<json(const json&)> handler;
+    {
+        std::shared_lock lock(maps_mutex_);
+        auto it = resource_handlers_.find(uri);
+        if (it == resource_handlers_.end()) {
+            return {{"_is_error", true}, {"code", -32602}, {"message", std::format("Resource not found: {}", uri)}};
+        }
+
+        auto def_it = resources_.find(uri);
+        if (def_it != resources_.end() && !has_permission(req.auth_role, def_it->second.required_permission)) {
+            return {{"_is_error", true}, {"code", -32003}, {"message",
+                std::format("Forbidden: role '{}' lacks permission for resource '{}'",
+                    role_to_str(req.auth_role), uri)}};
+        }
+        handler = it->second;
     }
 
-    // Per-resource permission check
-    auto def_it = resources_.find(uri);
-    if (def_it != resources_.end() && !has_permission(req.auth_role, def_it->second.required_permission)) {
-        return {{"_is_error", true}, {"code", -32003}, {"message",
-            std::format("Forbidden: role '{}' lacks permission for resource '{}'",
-                role_to_str(req.auth_role), uri)}};
-    }
-
-    json content = it->second(req.params);
+    json content = handler(req.params);
     if (content.is_object() && content.value("_is_error", false)) {
         return content;
     }
@@ -367,6 +383,7 @@ json McpProtocol::handle_prompts_list(const McpRequest& req) {
     json prompts = json::array();
     int i = 0;
     int count = 0;
+    std::shared_lock lock(maps_mutex_);
     for (const auto& entry : prompts_) {
         const auto& name = entry.first;
         const auto& def = entry.second;
@@ -394,12 +411,17 @@ json McpProtocol::handle_prompts_get(const McpRequest& req) {
     auto name = req.params.value("name", "");
     auto args = req.params.value("arguments", json::object());
 
-    auto it = prompt_handlers_.find(name);
-    if (it == prompt_handlers_.end()) {
-        return {{"_is_error", true}, {"code", -32602}, {"message", std::format("Prompt not found: {}", name)}};
+    std::function<json(const json&)> handler;
+    {
+        std::shared_lock lock(maps_mutex_);
+        auto it = prompt_handlers_.find(name);
+        if (it == prompt_handlers_.end()) {
+            return {{"_is_error", true}, {"code", -32602}, {"message", std::format("Prompt not found: {}", name)}};
+        }
+        handler = it->second;
     }
 
-    json content = it->second(args);
+    json content = handler(args);
     if (content.is_object() && content.value("_is_error", false)) {
         return content;
     }

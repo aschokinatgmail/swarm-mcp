@@ -114,7 +114,12 @@ struct AuthToken {
     std::string swarm_id;
     std::vector<std::string> scopes;   // additional fine-grained scopes
     std::chrono::system_clock::time_point issued_at{std::chrono::system_clock::now()};
-    std::chrono::system_clock::time_point expires_at;
+    // Default to issued_at + 24h instead of the epoch (1970-01-01).
+    // A default-constructed AuthToken must not be immediately expired —
+    // the previous default (epoch) was semantically incorrect: server-
+    // internal tokens that forgot to set expires_at would report as
+    // expired in 1970. See issue #114.
+    std::chrono::system_clock::time_point expires_at{issued_at + std::chrono::hours(24)};
     std::string token_string;  // Full signed token: payload.signature (populated by issue_token)
 
     bool is_expired() const {

@@ -11,6 +11,10 @@
 #include "mcp_collab/mqtt_client.hpp"
 #include "mcp_collab/channel.hpp"
 #include "mcp_collab/collab_defs.hpp"
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <barrier>
 
 using namespace mcp_collab;
 
@@ -539,4 +543,86 @@ TEST_F(CollabToolsTest, MergeExecuteFail) {
     EXPECT_TRUE(resp.contains("result"));
     auto result = tool_result(resp);
     EXPECT_TRUE(result.contains("error"));
+}
+
+// Issue #43: concurrent register_tool while handle_request reads must not
+// crash or trigger UB. One thread registers tools; another queries tools/list.
+TEST_F(CollabToolsTest, ConcurrentRegisterAndQueryNoCrash) {
+    constexpr int kRounds = 200;
+    std::atomic<bool> stop{false};
+    std::atomic<int> query_count{0};
+    std::atomic<int> register_count{0};
+
+    json list_req = {
+        {"jsonrpc", "2.0"},
+        {"id", 1},
+        {"method", "tools/list"},
+        {"params", {{"_auth", {{"role", "coordinator"}}}}},
+    };
+
+    std::thread querier([&] {
+        while (!stop.load()) {
+            auto resp = proto.handle_request(list_req);
+            ++query_count;
+        }
+    });
+
+    std::thread registrar([&] {
+        for (int i = 0; i < kRounds; ++i) {
+            McpToolDef def;
+            def.name = "concurrent_tool_" + std::to_string(i);
+            def.description = "concurrent test tool";
+            def.input_schema = json::object();
+            proto.register_tool(std::move(def), [](const json&) { return json{{"ok", true}}; });
+            ++register_count;
+        }
+        stop.store(true);
+    });
+
+    querier.join();
+    registrar.join();
+
+    EXPECT_EQ(register_count.load(), kRounds);
+    EXPECT_GT(query_count.load(), 0);
+}
+
+// Issue #43: concurrent register + tools/call must not crash. The call may
+// miss the tool (not yet registered) but must not trigger UB.
+TEST_F(CollabToolsTest, ConcurrentRegisterAndCallNoCrash) {
+    constexpr int kRounds = 100;
+    std::atomic<bool> stop{false};
+    std::atomic<int> call_count{0};
+    std::atomic<int> errors{0};
+
+    std::thread caller([&] {
+        int i = 0;
+        while (!stop.load()) {
+            json params = {{"name", "dynamic_tool"}, {"arguments", json::object()}};
+            params["_auth"] = {{"agent_id", "coord-1"}, {"role", "coordinator"}, {"swarm_id", "test-swarm"}};
+            json req = {{"jsonrpc", "2.0"}, {"id", i++}, {"method", "tools/call"}, {"params", params}};
+            try {
+                proto.handle_request(req);
+                ++call_count;
+            } catch (...) {
+                ++errors;
+            }
+        }
+    });
+
+    std::thread registrar([&] {
+        for (int i = 0; i < kRounds; ++i) {
+            McpToolDef def;
+            def.name = "dynamic_tool";
+            def.description = "dynamic test tool";
+            def.input_schema = json::object();
+            proto.register_tool(std::move(def), [](const json&) { return json{{"ok", true}}; });
+        }
+        stop.store(true);
+    });
+
+    caller.join();
+    registrar.join();
+
+    EXPECT_EQ(errors.load(), 0);
+    EXPECT_GT(call_count.load(), 0);
 }

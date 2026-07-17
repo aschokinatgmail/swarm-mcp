@@ -21,6 +21,7 @@ SwarmServer::SwarmServer(const ServerConfig& cfg)
         .cors_origin = cfg.http.cors_origin,
         .thread_pool_size = cfg.http.thread_pool_size,
         .require_auth = cfg.http.require_auth,
+        .rate_limit_rpm = cfg.http.rate_limit_rpm,
     }) {
     register_collab_tools(protocol_, task_manager_, agent_registry_,
         context_store_, event_bus_, branch_mgr_, merge_coordinator_,

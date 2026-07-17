@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 #include "mcp_collab/context_store.hpp"
 #include <thread>
+#include <atomic>
+#include <future>
+#include <chrono>
 
 using namespace mcp_collab;
 
@@ -156,4 +159,48 @@ TEST_F(ContextStoreTest, ThreadSafety) {
     }
     for (auto& t : threads) t.join();
     EXPECT_EQ(store.size(), 10u);
+}
+
+// Regression for #9: notify() must be called outside the write lock so a
+// callback that re-enters ContextStore (acquiring the shared lock) cannot
+// deadlock. Runs set() on a worker thread with a timeout; if the lock is
+// still held during notify, get() inside the callback blocks forever.
+TEST_F(ContextStoreTest, NotifyCallbackReentryDoesNotDeadlock) {
+    std::atomic<bool> callback_saw_value{false};
+    store.on_change([&](const std::string& key, const ContextEntry&, const std::string&) {
+        // Re-enter the store under the shared lock — would deadlock if
+        // notify() were called while the unique_lock is still held.
+        auto entry = store.get(key);
+        if (entry.has_value() && entry->value == 42) {
+            callback_saw_value = true;
+        }
+    });
+
+    auto fut = std::async(std::launch::async, [this]() {
+        store.set("reentry-key", 42);
+    });
+    ASSERT_EQ(fut.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "ContextStore::set deadlocked when notify callback re-entered get()";
+    EXPECT_TRUE(callback_saw_value.load());
+    EXPECT_EQ(store.get("reentry-key")->value, 42);
+}
+
+// Regression for #9 on update_partial(): same reentry pattern, must not
+// deadlock because notify() is emitted after the write lock releases.
+TEST_F(ContextStoreTest, NotifyCallbackReentryUpdatePartialDoesNotDeadlock) {
+    store.set("obj", {{"a", 1}});
+    std::atomic<bool> callback_saw_value{false};
+    store.on_change([&](const std::string& key, const ContextEntry&, const std::string&) {
+        auto entry = store.get(key);
+        if (entry.has_value() && entry->value["a"] == 1 && entry->value["b"] == 2) {
+            callback_saw_value = true;
+        }
+    });
+
+    auto fut = std::async(std::launch::async, [this]() {
+        store.update_partial("obj", {{"b", 2}});
+    });
+    ASSERT_EQ(fut.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "ContextStore::update_partial deadlocked when notify callback re-entered get()";
+    EXPECT_TRUE(callback_saw_value.load());
 }

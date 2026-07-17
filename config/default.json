@@ -21,12 +21,13 @@
     "ca_cert_path": ""
   },
   "http": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 3001,
     "endpoint": "/mcp",
     "cors_origin": "",
     "thread_pool_size": 4,
-    "require_auth": true
+    "require_auth": true,
+    "rate_limit_rpm": 60
   },
   "git": {
     "repo_path": ".",

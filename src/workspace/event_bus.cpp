@@ -51,33 +51,42 @@ void EventBus::emit(const std::string& type, const std::string& source, const js
         .data = data,
     };
 
+    // Snapshot handlers under the shared lock, then invoke OUTSIDE the lock.
+    // This prevents deadlock when a handler calls subscribe()/unsubscribe()
+    // (which require a unique_lock on handlers_mutex_). A shared_lock cannot
+    // be upgraded to a unique_lock, so invoking handlers under the read lock
+    // would deadlock. Copying the handler list is cheap relative to handler
+    // execution and keeps the critical section minimal.
+    std::vector<std::pair<SubscriptionId, EventHandler>> type_handlers;
+    std::vector<std::pair<SubscriptionId, EventHandler>> wildcard_handlers;
     {
         std::shared_lock lock(handlers_mutex_);
         if (auto it = handlers_.find(type); it != handlers_.end()) {
-            for (const auto& entry : it->second) {
-                const auto& handler = entry.second;
-                try { handler(event); }
-                catch (const std::exception& e) {
-                    spdlog::error("Event handler exception for '{}': {}", type, e.what());
-                }
-            }
+            type_handlers = it->second;
         }
         if (auto it = handlers_.find("*"); it != handlers_.end()) {
-            for (const auto& entry : it->second) {
-                const auto& handler = entry.second;
-                try { handler(event); }
-                catch (const std::exception& e) {
-                    spdlog::error("Wildcard event handler exception: {}", e.what());
-                }
-            }
+            wildcard_handlers = it->second;
+        }
+    }
+
+    for (const auto& [id, handler] : type_handlers) {
+        try { handler(event); }
+        catch (const std::exception& e) {
+            spdlog::error("Event handler exception for '{}': {}", type, e.what());
+        }
+    }
+    for (const auto& [id, handler] : wildcard_handlers) {
+        try { handler(event); }
+        catch (const std::exception& e) {
+            spdlog::error("Wildcard event handler exception: {}", e.what());
         }
     }
 
     {
         std::unique_lock lock(events_mutex_);
         event_log_.push_back(event);
-        if (event_log_.size() > max_log_size_) {
-            event_log_.erase(event_log_.begin(), event_log_.begin() + (event_log_.size() - max_log_size_));
+        while (event_log_.size() > max_log_size_) {
+            event_log_.pop_front();  // O(1) on deque (was O(n) on vector)
         }
     }
 }

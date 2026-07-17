@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <shared_mutex>
 
 #include "mcp_collab/secure_mqtt.hpp"
 
@@ -69,6 +70,11 @@ private:
     std::string namespace_;
     std::string swarm_id_;
     std::unordered_map<std::string, std::unique_ptr<Channel>> channels_;
+    // Protects channels_ against concurrent get/create/remove races (issue #44).
+    // get() takes a unique_lock for the entire check-and-create sequence
+    // (shared_mutex doesn't support lock upgrading). create()/remove() take a
+    // unique lock.
+    mutable std::shared_mutex channels_mutex_;
 };
 
 }

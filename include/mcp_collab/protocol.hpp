@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <functional>
 #include <chrono>
+#include <shared_mutex>
 
 #include <nlohmann/json.hpp>
 #include "mcp_collab/auth.hpp"
@@ -116,6 +117,14 @@ private:
     ServerInfo info_;
     ServerCapabilities caps_;
     bool initialized_{false};
+
+    // Protects tools_/resources_/prompts_ and their handler maps, plus
+    // notification_handlers_ and notification_cb_, against concurrent
+    // register/query races (issue #43). Read paths (handle_request dispatch,
+    // tool_definitions()/resource_definitions()/prompt_definitions()) take a
+    // shared lock; write paths (register_*/set_notification_handler) take a
+    // unique lock.
+    mutable std::shared_mutex maps_mutex_;
 
     std::unordered_map<std::string, McpToolDef> tools_;
     std::unordered_map<std::string, std::function<json(const json&)>> tool_handlers_;

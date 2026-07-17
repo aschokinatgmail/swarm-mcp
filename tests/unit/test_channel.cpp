@@ -3,6 +3,11 @@
 #include "mcp_collab/secure_mqtt.hpp"
 #include "mcp_collab/auth.hpp"
 #include <format>
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <barrier>
+#include <syncstream>
 
 using namespace mcp_collab;
 
@@ -87,4 +92,59 @@ TEST_F(ChannelTest, MultipleChannelTypesDistinctTopics) {
     EXPECT_NE(t1.topic(), t2.topic());
     EXPECT_NE(t2.topic(), t3.topic());
     EXPECT_NE(t1.topic(), t3.topic());
+}
+
+// Issue #44: concurrent get() on the same channel must not double-create.
+// All threads must observe the same Channel object (same address).
+TEST_F(ChannelTest, ConcurrentGetNoDoubleCreate) {
+    constexpr int kThreads = 16;
+    std::barrier sync_point(kThreads);
+    std::vector<std::thread> threads;
+    std::vector<Channel*> results(kThreads, nullptr);
+    std::atomic<bool> start{false};
+
+    threads.reserve(kThreads);
+    for (int i = 0; i < kThreads; ++i) {
+        threads.emplace_back([&, i] {
+            sync_point.arrive_and_wait();
+            results[i] = &channels.get(ChannelType::Custom, "race-channel");
+        });
+    }
+
+    for (auto& t : threads) t.join();
+
+    Channel* first = results[0];
+    ASSERT_NE(first, nullptr);
+    for (int i = 1; i < kThreads; ++i) {
+        EXPECT_EQ(results[i], first)
+            << "Thread " << i << " got a different Channel object — double-create race";
+    }
+    EXPECT_NE(first->topic().find("race-channel"), std::string::npos);
+}
+
+// Issue #44: concurrent create() + get() on the same key must not crash.
+TEST_F(ChannelTest, ConcurrentCreateAndGetNoCrash) {
+    constexpr int kThreads = 8;
+    std::barrier sync_point(kThreads);
+    std::vector<std::thread> threads;
+    std::atomic<int> errors{0};
+
+    threads.reserve(kThreads);
+    for (int i = 0; i < kThreads; ++i) {
+        threads.emplace_back([&, i] {
+            try {
+                sync_point.arrive_and_wait();
+                if (i % 2 == 0) {
+                    channels.create(ChannelType::Custom, "mixed-channel", 1);
+                } else {
+                    channels.get(ChannelType::Custom, "mixed-channel");
+                }
+            } catch (...) {
+                ++errors;
+            }
+        });
+    }
+
+    for (auto& t : threads) t.join();
+    EXPECT_EQ(errors.load(), 0);
 }
