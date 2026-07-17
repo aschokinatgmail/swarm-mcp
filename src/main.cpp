@@ -112,7 +112,13 @@ int main(int argc, char* argv[]) {
     }
 
     // Load config: file < env < CLI
-    auto file_config = mcp_collab::ServerConfig::from_file(config_path);
+    mcp_collab::ServerConfig file_config;
+    try {
+        file_config = mcp_collab::ServerConfig::from_file(config_path);
+    } catch (const std::exception& e) {
+        spdlog::error("Failed to load config from '{}': {}", config_path, e.what());
+        return 1;
+    }
     auto env_config = mcp_collab::ServerConfig::from_env();
 
     // Config precedence: CLI args > env vars > config file > defaults.

@@ -1404,7 +1404,7 @@ TEST(HandlerExtra, PostInvalidJsonNoAuth) {
 // ═════════════════════════════════════════════════════════════════════════════════
 
 TEST(ConfigBranch, FromNonexistentFile) {
-    auto cfg = ServerConfig::from_file("/nonexistent/path/config.json");
+    auto cfg = ServerConfig::from_file("config/nonexistent-config-file.json");
     EXPECT_EQ(cfg.server_name, "swarm-mcp");
 }
 

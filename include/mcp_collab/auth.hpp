@@ -12,6 +12,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <openssl/crypto.h>  // CRYPTO_memcmp — constant-time compare for HMAC verification
+
 namespace mcp_collab {
 
 using json = nlohmann::json;
@@ -171,8 +173,10 @@ public:
 
     static bool verify_sig(const std::string& payload, const std::string& signature, const std::string& secret) {
         auto expected = compute_hmac(payload, secret);
-        if (expected.size() != signature.size()) return false;
-        return std::equal(expected.begin(), expected.end(), signature.begin());
+        if (expected.size() != signature.size()) return false;  // length is not secret
+        // Constant-time comparison to avoid timing side-channel (CWE-208).
+        // CRYPTO_memcmp returns 0 on equality.
+        return CRYPTO_memcmp(expected.data(), signature.data(), expected.size()) == 0;
     }
 
     static std::string generate_secret(size_t length = 32);

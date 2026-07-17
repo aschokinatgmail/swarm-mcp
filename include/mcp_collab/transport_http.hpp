@@ -17,6 +17,11 @@
 
 namespace mcp_collab {
 
+// Maximum number of queued SSE events per client. When a slow/stalled client
+// cannot drain events fast enough, the oldest entries are dropped to keep the
+// queue bounded (CWE-400 / slow-reader DoS mitigation).
+inline constexpr std::size_t kMaxSseQueueEntries = 1024;
+
 struct StreamableHttpConfig {
     std::string host{"0.0.0.0"};
     uint16_t port{3001};

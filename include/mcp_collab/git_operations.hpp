@@ -22,7 +22,14 @@ class GitOperations {
 public:
     explicit GitOperations(const std::string& repo_path);
 
-    GitResult exec(const std::string& args) const;
+    // Vector-based exec (shell-injection safe): primary interface.
+    // No shell is involved — args are passed directly to execvp.
+    GitResult exec(std::vector<std::string> argv) const;
+    // String-based exec for backward compatibility. Tokenizes the string with
+    // a quote-aware splitter and delegates to the vector overload. Prefer the
+    // vector form for all new call sites. Named distinctly to avoid braced-
+    // init-list overload ambiguity with the vector form.
+    GitResult exec_str(const std::string& args) const;
 
     bool is_repo() const;
     std::string current_branch() const;

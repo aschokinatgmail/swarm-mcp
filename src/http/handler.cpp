@@ -2,7 +2,7 @@
 #include "mcp_collab/uuid.hpp"
 #include <spdlog/spdlog.h>
 #include <sstream>
-#include <queue>
+#include <deque>
 #include <condition_variable>
 #include <atomic>
 
@@ -247,7 +247,7 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
         return;
     }
 
-    auto queue = std::make_shared<std::queue<std::string>>();
+    auto queue = std::make_shared<std::deque<std::string>>();
     auto queue_mutex = std::make_shared<std::mutex>();
     auto queue_cv = std::make_shared<std::condition_variable>();
     auto disconnected = std::make_shared<std::atomic<bool>>(false);
@@ -256,7 +256,15 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
         if (disconnected->load()) return false;
         {
             std::lock_guard lock(*queue_mutex);
-            queue->push(data);
+            // Backpressure: drop the oldest entry when the queue is full so the
+            // client keeps seeing the most recent events rather than the
+            // stalest ones. This bounds per-client memory (CWE-400).
+            if (queue->size() >= kMaxSseQueueEntries) {
+                spdlog::warn("SSE queue full ({} entries); dropping oldest event for slow client",
+                             kMaxSseQueueEntries);
+                queue->pop_front();
+            }
+            queue->push_back(data);
         }
         queue_cv->notify_one();
         return true;
@@ -280,7 +288,7 @@ void StreamableHttpTransport::handle_get(const httplib::Request& req, httplib::R
                     if (disconnected->load() && queue->empty()) break;
                     if (!queue->empty()) {
                         msg = std::move(queue->front());
-                        queue->pop();
+                        queue->pop_front();
                     }
                 }
                 if (!msg.empty()) {

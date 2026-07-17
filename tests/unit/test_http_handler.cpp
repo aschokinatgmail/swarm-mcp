@@ -3,6 +3,8 @@
 #include "mcp_collab/protocol.hpp"
 #include "mcp_collab/auth.hpp"
 #include <nlohmann/json.hpp>
+#include <deque>
+#include <mutex>
 
 using namespace mcp_collab;
 using json = nlohmann::json;
@@ -376,6 +378,20 @@ TEST_F(HttpHandlerTest, SseStreamBroadcastMultipleClients) {
     sse.broadcast("event", json{{"k", "v"}});
     EXPECT_EQ(count1, 1);
     EXPECT_EQ(count2, 1);
+}
+
+TEST_F(HttpHandlerTest, SseQueueBackpressureDropsOldestAtCap) {
+    std::deque<std::string> queue;
+    auto push = [&](std::string data) {
+        if (queue.size() >= kMaxSseQueueEntries) queue.pop_front();
+        queue.push_back(std::move(data));
+    };
+    for (std::size_t i = 0; i < kMaxSseQueueEntries + 100; ++i) {
+        push("event-" + std::to_string(i));
+    }
+    EXPECT_EQ(queue.size(), kMaxSseQueueEntries);
+    EXPECT_EQ(queue.front(), "event-100");
+    EXPECT_EQ(queue.back(), "event-" + std::to_string(kMaxSseQueueEntries + 99));
 }
 
 // ── Delete with Session ID Tests ────────────────────────────────────────────

@@ -3,6 +3,7 @@
 #include <sstream>
 #include <algorithm>
 #include <filesystem>
+#include <csignal>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -18,33 +19,13 @@ namespace mcp_collab {
 GitOperations::GitOperations(const std::string& repo_path)
     : repo_path_(repo_path) {}
 
-GitResult GitOperations::exec(const std::string& args) const {
-    std::lock_guard lock(exec_mutex_);  // Serialize all git operations
+// Primary vector-based exec: fork+execvp, no shell, separate stdout/stderr capture, 30s timeout
+GitResult GitOperations::exec(std::vector<std::string> argv) const {
+    std::lock_guard lock(exec_mutex_);
     GitResult result;
-    std::string cmd = std::format("git -C \"{}\" {}", repo_path_, args);
-
-    // Validate: reject shell metacharacters to prevent injection
-    static const std::string dangerous_chars = "&|;`(){}!\n\r";
-    for (size_t i = 0; i < args.size(); ++i) {
-        if (dangerous_chars.find(args[i]) != std::string::npos) {
-            spdlog::error("Shell injection attempt rejected in git args: {}", args);
-            result.exit_code = -1;
-            return result;
-        }
-        if (args[i] == '$') {
-            int quote_count = 0;
-            for (size_t j = 0; j < i; ++j) {
-                if (args[j] == '"') quote_count++;
-            }
-            if (quote_count % 2 == 0) {
-                spdlog::error("Unquoted shell variable in git args: {}", args);
-                result.exit_code = -1;
-                return result;
-            }
-        }
-    }
 
 #ifdef _WIN32
+    // Windows: use CreateProcess with argv (no shell)
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
     HANDLE h_out_read, h_out_write, h_err_read, h_err_write;
     CreatePipe(&h_out_read, &h_out_write, &sa, 0);
@@ -58,9 +39,26 @@ GitResult GitOperations::exec(const std::string& args) const {
     si.hStdError = h_err_write;
     PROCESS_INFORMATION pi{};
 
+    // Build command line: git -C <repo> <argv...>
+    std::string cmdline = "git";
+    cmdline += " -C \"";
+    cmdline += repo_path_;
+    cmdline += "\"";
+    for (const auto& a : argv) {
+        cmdline += " \"";
+        cmdline += a;
+        cmdline += "\"";
+    }
+
     char buf[4096];
-    snprintf(buf, sizeof(buf), "cmd /c %s", cmd.c_str());
-    CreateProcessA(nullptr, buf, nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
+    snprintf(buf, sizeof(buf), "%s", cmdline.c_str());
+    if (!CreateProcessA(nullptr, buf, nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi)) {
+        result.success = false;
+        result.exit_code = 127;
+        CloseHandle(h_out_read); CloseHandle(h_out_write);
+        CloseHandle(h_err_read); CloseHandle(h_err_write);
+        return result;
+    }
 
     CloseHandle(h_out_write);
     CloseHandle(h_err_write);
@@ -85,56 +83,164 @@ GitResult GitOperations::exec(const std::string& args) const {
     CloseHandle(h_out_read);
     CloseHandle(h_err_read);
 #else
-    std::string full_cmd = cmd + " 2>&1";
-    FILE* pipe = popen(full_cmd.c_str(), "r");
-    if (!pipe) {
+    // POSIX: fork + execvp with explicit argv, no shell
+    int out_pipe[2], err_pipe[2];
+    if (pipe(out_pipe) != 0 || pipe(err_pipe) != 0) {
         result.success = false;
+        result.exit_code = -1;
+        result.stderr_out = "pipe() failed";
         return result;
     }
 
-    fd_set read_fds;
-    struct timeval tv;
-    char buffer[4096];
-    bool timed_out = false;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    // Build argv for execvp: {"git", "-C", repo_path_, <argv...>, nullptr}
+    std::vector<char*> exec_argv;
+    exec_argv.push_back(const_cast<char*>("git"));
+    exec_argv.push_back(const_cast<char*>("-C"));
+    exec_argv.push_back(const_cast<char*>(repo_path_.c_str()));
+    for (const auto& a : argv) {
+        exec_argv.push_back(const_cast<char*>(a.c_str()));
+    }
+    exec_argv.push_back(nullptr);
 
-    while (true) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(out_pipe[0]); close(out_pipe[1]);
+        close(err_pipe[0]); close(err_pipe[1]);
+        result.success = false;
+        result.exit_code = -1;
+        result.stderr_out = "fork() failed";
+        return result;
+    }
+
+    if (pid == 0) {
+        // Child: redirect stdout/stderr, exec
+        close(out_pipe[0]);
+        close(err_pipe[0]);
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(err_pipe[1], STDERR_FILENO);
+        close(out_pipe[1]);
+        close(err_pipe[1]);
+        execvp("git", exec_argv.data());
+        _exit(127);  // execvp failed
+    }
+
+    // Parent: close write ends, read stdout & stderr with poll, enforce 30s timeout
+    close(out_pipe[1]);
+    close(err_pipe[1]);
+
+    char buffer[4096];
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    bool timed_out = false;
+
+    bool out_done = false, err_done = false;
+    while (!(out_done && err_done)) {
         auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             deadline - std::chrono::steady_clock::now());
-        if (remaining.count() <= 0) { timed_out = true; break; }
+        if (remaining.count() <= 0) {
+            timed_out = true;
+            break;
+        }
 
-        int fd = fileno(pipe);
+        fd_set read_fds;
         FD_ZERO(&read_fds);
-        FD_SET(fd, &read_fds);
+        int maxfd = -1;
+        if (!out_done) { FD_SET(out_pipe[0], &read_fds); maxfd = std::max(maxfd, out_pipe[0]); }
+        if (!err_done) { FD_SET(err_pipe[0], &read_fds); maxfd = std::max(maxfd, err_pipe[0]); }
+
+        struct timeval tv;
         tv.tv_sec = static_cast<long>(remaining.count()) / 1000;
         tv.tv_usec = (static_cast<long>(remaining.count()) % 1000) * 1000;
 
-        int sel = select(fd + 1, &read_fds, nullptr, nullptr, &tv);
-        if (sel < 0) break;
-        if (sel == 0) { timed_out = true; break; }
+        int sel = select(maxfd + 1, &read_fds, nullptr, nullptr, &tv);
+        if (sel < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (sel == 0) {
+            timed_out = true;
+            break;
+        }
 
-        size_t n = fread(buffer, 1, sizeof(buffer), pipe);
-        if (n == 0) break;
-        result.stdout_out.append(buffer, n);
+        if (!out_done && FD_ISSET(out_pipe[0], &read_fds)) {
+            ssize_t n = read(out_pipe[0], buffer, sizeof(buffer));
+            if (n > 0) result.stdout_out.append(buffer, static_cast<size_t>(n));
+            else if (n < 0 && errno == EINTR) continue;
+            else out_done = true;
+        }
+        if (!err_done && FD_ISSET(err_pipe[0], &read_fds)) {
+            ssize_t n = read(err_pipe[0], buffer, sizeof(buffer));
+            if (n > 0) result.stderr_out.append(buffer, static_cast<size_t>(n));
+            else if (n < 0 && errno == EINTR) continue;
+            else err_done = true;
+        }
     }
 
-    int status = pclose(pipe);
+    close(out_pipe[0]);
+    close(err_pipe[0]);
+
     if (timed_out) {
+        kill(pid, SIGKILL);
         result.success = false;
         result.exit_code = -1;
         result.stderr_out = "git operation timed out after 30 seconds";
-    } else {
-        result.exit_code = WEXITSTATUS(status);
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+    if (!timed_out) {
+        result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
         result.success = (result.exit_code == 0);
     }
 #endif
 
-    spdlog::debug("git {}: exit={} out_len={}", args, result.exit_code, result.stdout_out.size());
+    // Build a debug string from argv for logging
+    std::string args_debug;
+    for (size_t i = 0; i < argv.size(); ++i) {
+        if (i > 0) args_debug += " ";
+        args_debug += argv[i];
+    }
+    spdlog::debug("git {}: exit={} out_len={} err_len={}", args_debug, result.exit_code, result.stdout_out.size(), result.stderr_out.size());
     return result;
 }
 
+// Helper: tokenize a shell-like string into argv, respecting single/double quotes
+// Used only by the backward-compat string overload.
+static std::vector<std::string> tokenize_args(const std::string& args) {
+    std::vector<std::string> result;
+    std::string current;
+    char quote = 0;  // 0 = none, '"' or '\''
+    size_t i = 0;
+    while (i < args.size()) {
+        char c = args[i];
+        if (quote) {
+            if (c == quote) {
+                quote = 0;
+            } else {
+                current += c;
+            }
+        } else if (c == '"' || c == '\'') {
+            quote = c;
+        } else if (c == ' ' || c == '\t') {
+            if (!current.empty()) {
+                result.push_back(current);
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+        ++i;
+    }
+    if (!current.empty()) result.push_back(current);
+    return result;
+}
+
+// Backward-compat string overload: tokenizes safely, delegates to vector version
+GitResult GitOperations::exec_str(const std::string& args) const {
+    return exec(tokenize_args(args));
+}
+
 bool GitOperations::is_repo() const {
-    auto r = exec("rev-parse --show-toplevel");
+    auto r = exec({"rev-parse", "--show-toplevel"});
     if (!r.success) return false;
     auto& s = r.stdout_out;
     while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
@@ -142,7 +248,7 @@ bool GitOperations::is_repo() const {
 }
 
 std::string GitOperations::current_branch() const {
-    auto r = exec("rev-parse --abbrev-ref HEAD");
+    auto r = exec({"rev-parse", "--abbrev-ref", "HEAD"});
     if (!r.success) return "";
     auto& s = r.stdout_out;
     while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
@@ -150,7 +256,7 @@ std::string GitOperations::current_branch() const {
 }
 
 std::string GitOperations::current_commit() const {
-    auto r = exec("rev-parse HEAD");
+    auto r = exec({"rev-parse", "HEAD"});
     if (!r.success) return "";
     auto& s = r.stdout_out;
     while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
@@ -158,63 +264,76 @@ std::string GitOperations::current_commit() const {
 }
 
 bool GitOperations::has_changes() const {
-    auto r = exec("status --porcelain");
+    auto r = exec({"status", "--porcelain"});
     return r.success && !r.stdout_out.empty();
 }
 
-bool GitOperations::init() const { return exec("init --initial-branch=main").success; }
-bool GitOperations::fetch() const { return exec("fetch --all").success; }
-bool GitOperations::pull() const { return exec("pull --rebase").success; }
-bool GitOperations::push() const { return exec("push").success; }
+bool GitOperations::init() const { return exec({"init", "--initial-branch=main"}).success; }
+bool GitOperations::fetch() const { return exec({"fetch", "--all"}).success; }
+bool GitOperations::pull() const { return exec({"pull", "--rebase"}).success; }
+bool GitOperations::push() const { return exec({"push"}).success; }
 
 bool GitOperations::commit(const std::string& message, const std::string& author) const {
-    std::string args = std::format("commit -m \"{}\"", message);
-    if (!author.empty()) args += std::format(" --author=\"{} <{}>\"", author, author);
-    return exec(args).success;
+    std::vector<std::string> argv = {"commit", "-m", message};
+    if (!author.empty()) {
+        argv.push_back("--author");
+        argv.push_back(author + " <" + author + ">");
+    }
+    return exec(argv).success;
 }
 
 bool GitOperations::add(const std::string& pathspec) const {
-    return exec(std::format("add {}", pathspec)).success;
+    return exec({"add", pathspec}).success;
 }
 
 bool GitOperations::checkout(const std::string& branch, bool create) const {
-    std::string args = create ? std::format("checkout -b {}", branch) : std::format("checkout {}", branch);
-    return exec(args).success;
+    if (create) {
+        return exec({"checkout", "-b", branch}).success;
+    } else {
+        return exec({"checkout", branch}).success;
+    }
 }
 
 bool GitOperations::merge(const std::string& branch, bool no_ff) const {
-    std::string args = no_ff ? std::format("merge --no-ff {}", branch) : std::format("merge {}", branch);
-    return exec(args).success;
+    if (no_ff) {
+        return exec({"merge", "--no-ff", branch}).success;
+    } else {
+        return exec({"merge", branch}).success;
+    }
 }
 
 bool GitOperations::merge_squash(const std::string& branch) const {
-    return exec(std::format("merge --squash {}", branch)).success;
+    return exec({"merge", "--squash", branch}).success;
 }
 
 bool GitOperations::rebase(const std::string& branch) const {
-    return exec(std::format("rebase {}", branch)).success;
+    return exec({"rebase", branch}).success;
 }
 
 bool GitOperations::branch_delete(const std::string& branch, bool force) const {
-    std::string flag = force ? "-D" : "-d";
-    return exec(std::format("branch {} {}", flag, branch)).success;
+    return exec({"branch", force ? "-D" : "-d", branch}).success;
 }
 
-bool GitOperations::stash() const { return exec("stash").success; }
-bool GitOperations::stash_pop() const { return exec("stash pop").success; }
+bool GitOperations::stash() const { return exec({"stash"}).success; }
+bool GitOperations::stash_pop() const { return exec({"stash", "pop"}).success; }
 
 bool GitOperations::reset(const std::string& ref, bool hard) const {
-    std::string flag = hard ? "--hard" : "--soft";
-    return exec(std::format("reset {} {}", flag, ref)).success;
+    return exec({"reset", hard ? "--hard" : "--soft", ref}).success;
 }
 
 bool GitOperations::cherry_pick(const std::string& commit_hash) const {
-    return exec(std::format("cherry-pick {}", commit_hash)).success;
+    return exec({"cherry-pick", commit_hash}).success;
 }
 
 std::vector<std::string> GitOperations::log(int count, const std::string& format) const {
-    std::string fmt = format.empty() ? "--oneline" : std::format("--format={}", format);
-    auto r = exec(std::format("log {} -{}", fmt, count));
+    std::vector<std::string> argv = {"log"};
+    if (format.empty()) {
+        argv.push_back("--oneline");
+    } else {
+        argv.push_back("--format=" + format);
+    }
+    argv.push_back("-" + std::to_string(count));
+    auto r = exec(argv);
     if (!r.success) return {};
 
     std::vector<std::string> lines;
@@ -228,8 +347,9 @@ std::vector<std::string> GitOperations::log(int count, const std::string& format
 }
 
 std::vector<std::string> GitOperations::branches(bool remote) const {
-    std::string args = remote ? "branch -r" : "branch";
-    auto r = exec(args);
+    std::vector<std::string> argv = {"branch"};
+    if (remote) argv.push_back("-r");
+    auto r = exec(argv);
     if (!r.success) return {};
 
     std::vector<std::string> result;
@@ -247,20 +367,18 @@ std::vector<std::string> GitOperations::branches(bool remote) const {
 }
 
 std::string GitOperations::diff(const std::string& from_ref, const std::string& to_ref) const {
-    std::string args;
+    std::vector<std::string> argv = {"diff"};
     if (!from_ref.empty() && !to_ref.empty()) {
-        args = std::format("diff {}...{}", from_ref, to_ref);
+        argv.push_back(from_ref + "..." + to_ref);
     } else if (!from_ref.empty()) {
-        args = std::format("diff {}", from_ref);
-    } else {
-        args = "diff";
+        argv.push_back(from_ref);
     }
-    auto r = exec(args);
+    auto r = exec(argv);
     return r.success ? r.stdout_out : "";
 }
 
 std::string GitOperations::show(const std::string& ref) const {
-    auto r = exec(std::format("show {}", ref));
+    auto r = exec({"show", ref});
     return r.success ? r.stdout_out : "";
 }
 

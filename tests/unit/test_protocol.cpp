@@ -197,3 +197,54 @@ TEST_F(McpProtocolTest, AuthContextExtracted) {
     proto.handle_request(req);
     EXPECT_EQ(captured_agent, "agent-42");
 }
+
+// Auth-gate regression tests for resources/subscribe, prompts/list, prompts/get.
+// All roles hold TaskRead, so the -32003 rejection branch is unreachable via the
+// public JSON path; tests verify the guard does not break legitimate access.
+
+TEST_F(McpProtocolTest, SubscribeResourceWithAuth) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":16,"method":"resources/subscribe","params":{"uri":"swarm://test","_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_TRUE(resp.contains("result"));
+    EXPECT_EQ(resp["result"]["subscribed"], true);
+}
+
+TEST_F(McpProtocolTest, SubscribeResourceWithDefaultRole) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":17,"method":"resources/subscribe","params":{"uri":"swarm://test"}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_TRUE(resp.contains("result"));
+    EXPECT_EQ(resp["result"]["subscribed"], true);
+}
+
+TEST_F(McpProtocolTest, PromptsListWithAuth) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    proto.register_prompt({.name = "auth_greet", .description = "Greeting prompt"}, [](const json&) -> json {
+        return json::array({{{"role", "user"}, {"content", "Hello"}}});
+    });
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":18,"method":"prompts/list","params":{"_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_TRUE(resp.contains("result"));
+    EXPECT_EQ(resp["result"]["prompts"].size(), 1u);
+    EXPECT_EQ(resp["result"]["prompts"][0]["name"], "auth_greet");
+}
+
+TEST_F(McpProtocolTest, PromptsGetWithAuth) {
+    proto.handle_request({{"jsonrpc", "2.0"}, {"id", 0}, {"method", "initialize"}, {"params", {}}});
+    proto.register_prompt({.name = "auth_greet2", .description = "Greeting"}, [](const json& args) -> json {
+        return json::array({{{"role", "user"}, {"content", "Hi " + args.value("name", "")}}});
+    });
+    json req = json::parse(
+        R"({"jsonrpc":"2.0","id":19,"method":"prompts/get","params":{"name":"auth_greet2","arguments":{"name":"World"},"_auth":{"agent_id":"a1","role":"worker","swarm_id":"s1"}}})"
+    );
+    auto resp = proto.handle_request(req);
+    EXPECT_TRUE(resp.contains("result"));
+    EXPECT_TRUE(resp["result"].contains("messages"));
+}

@@ -121,6 +121,9 @@ json McpProtocol::handle_request(const json& request) {
     }
 
     if (req.method == "resources/subscribe") {
+        if (!check_auth(req, Permission::TaskRead)) {
+            return make_error_response(req, -32003, "Forbidden: insufficient role to subscribe to resources");
+        }
         auto result = handle_resources_subscribe(req);
         return req.id.has_value()
             ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", result}}
@@ -128,6 +131,9 @@ json McpProtocol::handle_request(const json& request) {
     }
 
     if (req.method == "prompts/list") {
+        if (!check_auth(req, Permission::PromptUse)) {
+            return make_error_response(req, -32003, "Forbidden: insufficient role to list prompts");
+        }
         auto result = handle_prompts_list(req);
         return req.id.has_value()
             ? json{{"jsonrpc", "2.0"}, {"id", *req.id}, {"result", result}}
@@ -135,6 +141,9 @@ json McpProtocol::handle_request(const json& request) {
     }
 
     if (req.method == "prompts/get") {
+        if (!check_auth(req, Permission::PromptUse)) {
+            return make_error_response(req, -32003, "Forbidden: insufficient role to get prompts");
+        }
         auto result = handle_prompts_get(req);
         if (result.contains("code") && result.contains("message")) {
             return make_error_response(req, result["code"].get<int>(), result["message"].get<std::string>());

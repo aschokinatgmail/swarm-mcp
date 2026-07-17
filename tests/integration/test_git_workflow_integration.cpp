@@ -23,8 +23,8 @@ protected:
         std::filesystem::create_directories(test_repo_path);
         git = std::make_unique<GitOperations>(test_repo_path);
         ASSERT_TRUE(git->init());
-        ASSERT_TRUE(git->exec("config user.email \"test@test.com\"").success);
-        ASSERT_TRUE(git->exec("config user.name \"Test\"").success);
+        ASSERT_TRUE(git->exec_str("config user.email \"test@test.com\"").success);
+        ASSERT_TRUE(git->exec_str("config user.name \"Test\"").success);
         std::ofstream(test_repo_path + "/README.md") << "# Test Repo";
         ASSERT_TRUE(git->add("."));
         ASSERT_TRUE(git->commit("Initial commit"));

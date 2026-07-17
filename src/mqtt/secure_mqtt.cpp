@@ -4,6 +4,7 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include <openssl/crypto.h>  // CRYPTO_memcmp — constant-time compare for HMAC verification
 
 namespace {
 
@@ -95,7 +96,10 @@ std::optional<MqttEnvelope> MqttEnvelope::verify(const std::string& raw, const s
         std::string signing_input = std::format("{}:{}:{}:{}", env.sender, env.swarm_id, env.timestamp, payload_str);
         std::string expected = compute_hmac(signing_input, secret);
 
-        if (expected != env.signature) {
+        // Constant-time comparison to avoid timing side-channel (CWE-208).
+        // Length is not secret; CRYPTO_memcmp requires equal length and returns 0 on equality.
+        if (expected.size() != env.signature.size() ||
+            CRYPTO_memcmp(expected.data(), env.signature.data(), expected.size()) != 0) {
             spdlog::warn("MQTT envelope: signature verification failed from sender={}", env.sender);
             return std::nullopt;
         }

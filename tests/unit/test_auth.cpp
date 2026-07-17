@@ -202,3 +202,23 @@ TEST_F(AuthTest, AuthTokenToJson) {
     EXPECT_EQ(j["role"], "worker");
     EXPECT_EQ(j["swarm_id"], "swarm-1");
 }
+
+// ── Constant-time signature verification ──────────────────────────
+
+TEST_F(AuthTest, VerifySigConstantTimeCorrectAndTampered) {
+    std::string payload = "constant-time-verify-test-payload";
+    std::string correct_sig = AuthProvider::sign(payload, secret);
+
+    // 1. Correct signature verifies
+    EXPECT_TRUE(AuthProvider::verify_sig(payload, correct_sig, secret));
+
+    // 2. Tampered signature (one byte changed) fails
+    std::string tampered_sig = correct_sig;
+    ASSERT_FALSE(tampered_sig.empty());
+    tampered_sig[tampered_sig.size() - 1] ^= 0x01;  // flip one bit in the last byte
+    EXPECT_FALSE(AuthProvider::verify_sig(payload, tampered_sig, secret));
+
+    // 3. Wrong-length signature fails via the length early-return path
+    std::string wrong_len_sig = correct_sig + "XX";
+    EXPECT_FALSE(AuthProvider::verify_sig(payload, wrong_len_sig, secret));
+}

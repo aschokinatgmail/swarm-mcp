@@ -3,14 +3,70 @@
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
+#include <stdexcept>
+#include <format>
 #include <spdlog/spdlog.h>
 
 namespace mcp_collab {
 
+namespace {
+// Check if a path contains ".." segments (defense in depth)
+bool contains_dotdot(const std::string& path) {
+    for (const auto& segment : std::filesystem::path(path)) {
+        if (segment == "..") return true;
+    }
+    return false;
+}
+
+// Check if resolved path is lexically under root (no ".." in relative path)
+bool is_under_root(const std::filesystem::path& resolved, const std::filesystem::path& root) {
+    auto rel = resolved.lexically_relative(root);
+    if (rel.empty()) return false;
+    for (const auto& seg : rel) {
+        if (seg == "..") return false;
+    }
+    return true;
+}
+} // namespace
+
 ServerConfig ServerConfig::from_file(const std::string& path) {
     ServerConfig cfg;
 
-    if (!std::filesystem::exists(path)) return cfg;
+    // Path traversal protection: reject ".." segments in raw input.
+    // Validated BEFORE the existence check so rejected paths don't leak via
+    // the empty-config early return.
+    if (contains_dotdot(path)) {
+        throw std::invalid_argument(
+            std::format("Config path '{}' contains '..' segments, which are not allowed.", path));
+    }
+
+    // Canonicalize and validate against allowlist
+    auto resolved = std::filesystem::weakly_canonical(path);
+
+    // Canonicalize the allowlist roots too, so symlinked roots (e.g. macOS
+    // /var -> /private/var, or /tmp -> /private/tmp) compare lexically equal
+    // against the canonicalized user path.
+    std::filesystem::path cwd = std::filesystem::weakly_canonical(std::filesystem::current_path());
+    std::filesystem::path cwd_config = cwd / "config";
+    std::filesystem::path temp_dir = std::filesystem::weakly_canonical(std::filesystem::temp_directory_path());
+
+    const char* home_env = std::getenv("HOME");
+    std::filesystem::path home = home_env
+        ? std::filesystem::weakly_canonical(std::filesystem::path(home_env))
+        : std::filesystem::path();
+
+    bool allowed = is_under_root(resolved, cwd) ||
+                   is_under_root(resolved, cwd_config) ||
+                   is_under_root(resolved, temp_dir) ||
+                   (!home.empty() && is_under_root(resolved, home));
+
+    if (!allowed) {
+        throw std::invalid_argument(
+            std::format("Config path '{}' (resolved to '{}') is outside allowed directories. "
+                       "Config files must be under: current working directory, 'config/' subdirectory, "
+                       "system temp directory, or $HOME.",
+                       path, resolved.string()));
+    }
 
     std::ifstream file(path);
     if (!file.is_open()) return cfg;

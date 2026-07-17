@@ -138,7 +138,7 @@ TEST_F(GitOperationsTest, MergeFastForward) {
 
 TEST_F(GitOperationsTest, ExecWithInvalidArgs) {
     GitOperations git(test_repo_path);
-    auto result = git.exec("nonexistent-command-xyz");
+    auto result = git.exec_str("nonexistent-command-xyz");
     EXPECT_FALSE(result.success);
     EXPECT_NE(result.exit_code, 0);
 }
@@ -237,32 +237,39 @@ TEST_F(GitOperationsTest, BranchListRemote) {
     EXPECT_GE(list.size(), 0u);
 }
 
-TEST_F(GitOperationsTest, ExecShellInjectionBlocked) {
+TEST_F(GitOperationsTest, CommitMessageWithDoubleQuotesPreserved) {
     GitOperations git(test_repo_path);
-    auto result = git.exec("status; ls");
-    EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.exit_code, -1);
+    std::ofstream(test_repo_path + "/quoted.txt") << "q";
+    git.add();
+    std::string msg = "fix: merge \"feature-x\" into main";
+    EXPECT_TRUE(git.commit(msg));
+    auto log = git.exec_str("log -1 --format=%B");
+    auto body = log.stdout_out;
+    while (!body.empty() && (body.back() == '\n' || body.back() == '\r')) body.pop_back();
+    EXPECT_EQ(body, msg);
 }
 
-TEST_F(GitOperationsTest, ExecUnquotedVariableBlocked) {
+TEST_F(GitOperationsTest, AddPathspecWithSpaces) {
     GitOperations git(test_repo_path);
-    // '$' outside quotes should be blocked
-    auto result = git.exec("status $HOME");
-    EXPECT_FALSE(result.success);
-    EXPECT_EQ(result.exit_code, -1);
+    std::ofstream(test_repo_path + "/file with spaces.txt") << "spaced";
+    EXPECT_TRUE(git.add("file with spaces.txt"));
 }
 
-TEST_F(GitOperationsTest, ExecQuotedVariableBlocked) {
+TEST_F(GitOperationsTest, ShellMetacharsInCommitTreatedAsLiteral) {
     GitOperations git(test_repo_path);
-    // Quoted or not, pipe '|' is always in the dangerous_chars denylist
-    auto result = git.exec("log --format=\"%s | $HOME\"");
-    EXPECT_EQ(result.exit_code, -1);
+    std::ofstream(test_repo_path + "/meta.txt") << "m";
+    git.add();
+    std::string msg = "test; echo PWNED > /tmp/pwned; | $(cat /etc/passwd) `whoami`";
+    EXPECT_TRUE(git.commit(msg));
+    EXPECT_FALSE(std::filesystem::exists("/tmp/pwned"));
+    std::error_code ec;
+    std::filesystem::remove("/tmp/pwned", ec);
 }
 
 TEST_F(GitOperationsTest, ExecPopenFailure) {
     GitOperations git(test_repo_path);
     // Very long invalid command should fail gracefully
-    auto result = git.exec("nonexistent-command-that-does-not-exist-xyz");
+    auto result = git.exec_str("nonexistent-command-that-does-not-exist-xyz");
     EXPECT_FALSE(result.success);
 }
 

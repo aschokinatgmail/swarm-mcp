@@ -54,3 +54,5 @@ CMakeFiles/
 # Local development
 .cache/
 .sisyphus/
+# Local CI build dir
+build-ci/

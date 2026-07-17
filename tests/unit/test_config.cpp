@@ -89,7 +89,8 @@ TEST_F(ConfigTest, FromFile) {
 }
 
 TEST_F(ConfigTest, FromNonexistentFile) {
-    auto cfg = ServerConfig::from_file("/nonexistent/path/config.json");
+    // Non-existent file under temp directory (allowed root) → returns defaults
+    auto cfg = ServerConfig::from_file((std::filesystem::temp_directory_path() / "nonexistent-config.json").string());
     EXPECT_EQ(cfg.server_name, "swarm-mcp"); // defaults preserved
 }
 
@@ -152,4 +153,59 @@ TEST_F(ConfigTest, FromEnv) {
     unsetenv("SWARM_HTTP_AUTH");
     unsetenv("SWARM_TOKEN_TTL");
 #endif
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Path traversal regression tests (CWE-23)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_F(ConfigTest, PathTraversalDotDotRejected) {
+    // Raw ".." segments are rejected before canonicalization
+    EXPECT_THROW(ServerConfig::from_file("../../../etc/passwd"), std::invalid_argument);
+    EXPECT_THROW(ServerConfig::from_file("../../etc/passwd"), std::invalid_argument);
+    EXPECT_THROW(ServerConfig::from_file("../config/default.json"), std::invalid_argument);
+}
+
+TEST_F(ConfigTest, AbsolutePathOutsideAllowlistRejected) {
+    // Absolute paths to system files are rejected
+    EXPECT_THROW(ServerConfig::from_file("/etc/passwd"), std::invalid_argument);
+    EXPECT_THROW(ServerConfig::from_file("/proc/self/environ"), std::invalid_argument);
+    EXPECT_THROW(ServerConfig::from_file("/tmp/../etc/passwd"), std::invalid_argument);
+}
+
+TEST_F(ConfigTest, PathWithDotDotResolvedInsideAllowedRootRejected) {
+    // Path containing ".." segments is rejected even if it resolves inside an allowed root
+    // (raw ".." check is defense in depth before canonicalization)
+    std::filesystem::path test_dir = std::filesystem::temp_directory_path() / ("swarm-mcp-path-test-" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::create_directories(test_dir);
+    std::string config_path = (test_dir / "config.json").string();
+    std::ofstream(config_path) << R"({"server_name": "test"})";
+
+    // Path with ".." segment is rejected even though it resolves to the same file
+    std::string path_with_dotdot = (test_dir / "subdir" / ".." / "config.json").string();
+    EXPECT_THROW(ServerConfig::from_file(path_with_dotdot), std::invalid_argument);
+
+    std::filesystem::remove_all(test_dir);
+}
+
+TEST_F(ConfigTest, SymlinkOutsideAllowlistRejected) {
+    // Symlink pointing outside the allowlist is rejected (canonicalization resolves symlinks)
+    std::filesystem::path test_dir = std::filesystem::temp_directory_path() / ("swarm-mcp-symlink-test-" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::create_directories(test_dir);
+
+    // Create a symlink to /etc/passwd
+    std::filesystem::path symlink_path = test_dir / "config.json";
+    std::filesystem::create_symlink("/etc/passwd", symlink_path);
+
+    // Symlink resolves to /etc/passwd which is outside the allowlist
+    EXPECT_THROW(ServerConfig::from_file(symlink_path.string()), std::invalid_argument);
+
+    std::filesystem::remove_all(test_dir);
+}
+
+TEST_F(ConfigTest, ValidPathsUnderAllowlistAccepted) {
+    // Temp directory is in the allowlist (used by existing tests)
+    write_config(R"({"server_name": "temp-test"})");
+    auto cfg = ServerConfig::from_file(test_config_path);
+    EXPECT_EQ(cfg.server_name, "temp-test");
 }
