@@ -34,6 +34,9 @@ void print_usage(const char* prog) {
         "  --secret-file <path>       Read swarm secret from a file (recommended over --secret)\n"
         "  -g, --git-path <path>      Git repository path\n"
         "  --no-auth                  Disable authentication (dev mode)\n"
+        "  --tls                     Enable TLS (HTTPS) for the HTTP transport\n"
+        "  --tls-cert <path>         Path to PEM certificate (requires --tls)\n"
+        "  --tls-key <path>          Path to PEM private key (requires --tls)\n"
         "  --enroll <agent_id>        Enroll a new agent and print its token\n"
         "  --role <role>              Role for enrollment (coordinator, worker, observer)\n"
         "  --store-secret <key>       Store secret in macOS Keychain and exit\n"
@@ -56,6 +59,9 @@ int main(int argc, char* argv[]) {
     bool quiet = false;
     bool no_auth = false;
     bool use_keychain = false;
+    bool tls_enabled = false;
+    std::string tls_cert_path;
+    std::string tls_key_path;
     std::string store_secret_val;
     std::string enroll_agent;
     std::string enroll_role = "worker";
@@ -87,6 +93,15 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--no-auth") {
             no_auth = true;
             config.http.require_auth = false;
+        } else if (arg == "--tls") {
+            tls_enabled = true;
+            config.http.tls_enabled = true;
+        } else if (arg == "--tls-cert" && i + 1 < argc) {
+            tls_cert_path = argv[++i];
+            config.http.tls_cert_path = tls_cert_path;
+        } else if (arg == "--tls-key" && i + 1 < argc) {
+            tls_key_path = argv[++i];
+            config.http.tls_key_path = tls_key_path;
         } else if (arg == "--enroll" && i + 1 < argc) {
             enroll_agent = argv[++i];
         } else if (arg == "--role" && i + 1 < argc) {
@@ -186,6 +201,24 @@ int main(int argc, char* argv[]) {
         ? env_config.http.rate_limit_rpm
         : (file_config.http.rate_limit_rpm ? file_config.http.rate_limit_rpm : 60);
 
+    // TLS precedence: CLI > env > file > default (false). CLI --tls flag wins;
+    // otherwise env SWARM_HTTP_TLS; otherwise file tls_enabled.
+    if (!tls_enabled) {
+        config.http.tls_enabled = env_config.http.tls_enabled
+            ? env_config.http.tls_enabled
+            : file_config.http.tls_enabled;
+    }
+    config.http.tls_cert_path = pick_str(config.http.tls_cert_path,
+                                         env_config.http.tls_cert_path,
+                                         file_config.http.tls_cert_path, "");
+    config.http.tls_key_path = pick_str(config.http.tls_key_path,
+                                        env_config.http.tls_key_path,
+                                        file_config.http.tls_key_path, "");
+
+    if (!config.http.tls_enabled && (!config.http.tls_cert_path.empty() || !config.http.tls_key_path.empty())) {
+        spdlog::warn("TLS cert/key paths provided but TLS is not enabled (use --tls to enable)");
+    }
+
     if (no_auth) {
         config.http.require_auth = false;
     }
@@ -238,6 +271,15 @@ int main(int argc, char* argv[]) {
 
     if (!config.http.require_auth) {
         spdlog::warn("Authentication is DISABLED — all agents can connect without tokens.");
+    }
+
+    if (config.http.tls_enabled) {
+        if (config.http.tls_cert_path.empty() || config.http.tls_key_path.empty()) {
+            spdlog::error("TLS enabled but cert or key path is empty. "
+                          "Provide --tls-cert and --tls-key (or tls_cert_path/tls_key_path in config).");
+            return 1;
+        }
+        spdlog::info("TLS enabled (HTTPS)");
     }
 
     spdlog::info("╔══════════════════════════════════════════╗");

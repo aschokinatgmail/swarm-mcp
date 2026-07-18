@@ -27,7 +27,10 @@
     "cors_origin": "",
     "thread_pool_size": 4,
     "require_auth": true,
-    "rate_limit_rpm": 60
+    "rate_limit_rpm": 60,
+    "tls_enabled": false,
+    "tls_cert_path": "",
+    "tls_key_path": ""
   },
   "git": {
     "repo_path": ".",

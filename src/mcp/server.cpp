@@ -23,6 +23,9 @@ SwarmServer::SwarmServer(const ServerConfig& cfg)
         .thread_pool_size = cfg.http.thread_pool_size,
         .require_auth = cfg.http.require_auth,
         .rate_limit_rpm = cfg.http.rate_limit_rpm,
+        .tls_enabled = cfg.http.tls_enabled,
+        .tls_cert_path = cfg.http.tls_cert_path,
+        .tls_key_path = cfg.http.tls_key_path,
     }) {
     register_collab_tools(protocol_, task_manager_, agent_registry_,
         context_store_, event_bus_, branch_mgr_, merge_coordinator_,

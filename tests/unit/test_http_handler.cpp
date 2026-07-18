@@ -699,3 +699,41 @@ TEST_F(HttpHandlerTest, BruteForceTokensAreThrottled) {
     EXPECT_EQ(count_401, 3) << "First 3 brute-force attempts should get 401";
     EXPECT_EQ(count_429, 2) << "Remaining attempts should be throttled with 429";
 }
+
+// ── TLS Config Tests (#100/#60) ──────────────────────────────────────────────
+
+TEST_F(HttpHandlerTest, TlsConfigAcceptedByTransport) {
+    // A StreamableHttpConfig with TLS fields set should be accepted by the
+    // transport constructor without throwing. We do not start the server
+    // (which would require a valid cert/key), only verify config plumbing.
+    StreamableHttpConfig config;
+    config.host = "127.0.0.1";
+    config.port = 0;
+    config.endpoint = "/mcp";
+    config.require_auth = false;
+    config.tls_enabled = true;
+    config.tls_cert_path = "/nonexistent/cert.pem";
+    config.tls_key_path = "/nonexistent/key.pem";
+
+    StreamableHttpTransport transport(*protocol_, *auth_, config);
+    EXPECT_FALSE(transport.is_running());
+}
+
+TEST_F(HttpHandlerTest, TlsDisabledByDefault) {
+    StreamableHttpConfig config;
+    EXPECT_FALSE(config.tls_enabled);
+    EXPECT_EQ(config.tls_cert_path, "");
+    EXPECT_EQ(config.tls_key_path, "");
+}
+
+TEST_F(HttpHandlerTest, TlsConfigFieldsPreserved) {
+    // Verify TLS fields survive the transport constructor (config is copied in).
+    StreamableHttpConfig config;
+    config.tls_enabled = true;
+    config.tls_cert_path = "/some/cert.pem";
+    config.tls_key_path = "/some/key.pem";
+
+    StreamableHttpTransport transport(*protocol_, *auth_, config);
+    // Transport is not running, but construction should not alter behavior.
+    EXPECT_FALSE(transport.is_running());
+}

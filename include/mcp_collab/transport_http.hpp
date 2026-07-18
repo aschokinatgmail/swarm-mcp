@@ -36,6 +36,11 @@ struct StreamableHttpConfig {
     int thread_pool_size{4};
     bool require_auth{true};
     int rate_limit_rpm{60};
+    // TLS (HTTPS) support (#100/#60). When tls_enabled is true, the transport
+    // creates an httplib::SSLServer using the PEM cert/key paths below.
+    bool tls_enabled{false};
+    std::string tls_cert_path;    // path to PEM certificate
+    std::string tls_key_path;     // path to PEM private key
 };
 
 // Sliding-window rate limiter (#92). For each key, a deque of request
@@ -91,7 +96,7 @@ public:
     void handle_delete(const httplib::Request& req, httplib::Response& res);
 
 private:
-    void setup_routes();
+    bool setup_routes();
     void send_sse_notification(const std::string& method, const json& params);
 
     std::optional<AuthToken> authenticate(const httplib::Request& req) const;

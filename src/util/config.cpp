@@ -112,6 +112,9 @@ ServerConfig ServerConfig::from_file(const std::string& path) {
             if (h.contains("thread_pool_size")) cfg.http.thread_pool_size = h["thread_pool_size"].get<int>();
             if (h.contains("require_auth")) cfg.http.require_auth = h["require_auth"].get<bool>();
             if (h.contains("rate_limit_rpm")) cfg.http.rate_limit_rpm = h["rate_limit_rpm"].get<int>();
+            if (h.contains("tls_enabled")) cfg.http.tls_enabled = h["tls_enabled"].get<bool>();
+            if (h.contains("tls_cert_path")) cfg.http.tls_cert_path = h["tls_cert_path"].get<std::string>();
+            if (h.contains("tls_key_path")) cfg.http.tls_key_path = h["tls_key_path"].get<std::string>();
         }
 
         if (j.contains("git")) {
@@ -184,6 +187,18 @@ ServerConfig ServerConfig::from_env() {
         try { cfg.http.rate_limit_rpm = std::stoi(env_val); }
         catch (const std::exception& e) { spdlog::warn("Invalid SWARM_RATE_LIMIT_RPM='{}': {}", env_val, e.what()); }
     }
+
+    env_val = std::getenv("SWARM_HTTP_TLS");
+    if (env_val) {
+        std::string v(env_val);
+        cfg.http.tls_enabled = (v == "true" || v == "1");
+    }
+
+    env_val = std::getenv("SWARM_HTTP_TLS_CERT");
+    if (env_val) cfg.http.tls_cert_path = env_val;
+
+    env_val = std::getenv("SWARM_HTTP_TLS_KEY");
+    if (env_val) cfg.http.tls_key_path = env_val;
 
     env_val = std::getenv("SWARM_GIT_REPO_PATH");
     if (env_val) cfg.git.repo_path = env_val;

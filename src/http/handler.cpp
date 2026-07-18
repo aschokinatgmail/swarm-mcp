@@ -6,6 +6,7 @@
 #include <deque>
 #include <condition_variable>
 #include <atomic>
+#include <filesystem>
 
 namespace mcp_collab {
 
@@ -92,8 +93,27 @@ StreamableHttpTransport::~StreamableHttpTransport() {
     stop();
 }
 
-void StreamableHttpTransport::setup_routes() {
-    server_ = std::make_unique<httplib::Server>();
+bool StreamableHttpTransport::setup_routes() {
+    if (config_.tls_enabled) {
+        if (!std::filesystem::exists(config_.tls_cert_path)) {
+            spdlog::error("TLS cert file not found: {}", config_.tls_cert_path);
+            return false;
+        }
+        if (!std::filesystem::exists(config_.tls_key_path)) {
+            spdlog::error("TLS key file not found: {}", config_.tls_key_path);
+            return false;
+        }
+        server_ = std::unique_ptr<httplib::Server>(
+            new httplib::SSLServer(config_.tls_cert_path.c_str(),
+                                   config_.tls_key_path.c_str()));
+    } else {
+        server_ = std::make_unique<httplib::Server>();
+    }
+
+    if (!server_->is_valid()) {
+        spdlog::error("Failed to create HTTP server (TLS: {})", config_.tls_enabled);
+        return false;
+    }
 
     server_->Options(config_.endpoint, [this](const httplib::Request&, httplib::Response& res) {
         apply_cors(config_, res);
@@ -118,6 +138,7 @@ void StreamableHttpTransport::setup_routes() {
     });
 
     spdlog::info("HTTP routes configured: endpoint={} auth={}", config_.endpoint, config_.require_auth);
+    return true;
 }
 
 std::optional<AuthToken> StreamableHttpTransport::authenticate(const httplib::Request& req) const {
@@ -346,10 +367,14 @@ void StreamableHttpTransport::send_sse_notification(const std::string& method, c
 void StreamableHttpTransport::start() {
     if (running_.load()) return;
 
-    setup_routes();
+    if (!setup_routes()) {
+        throw std::runtime_error("Failed to setup HTTP server routes (TLS cert/key invalid?)");
+    }
 
-    spdlog::info("Starting Swarm MCP server on {}:{}{} (auth={})",
-        config_.host, config_.port, config_.endpoint, config_.require_auth ? "on" : "off");
+    spdlog::info("Starting Swarm MCP server on {}:{}{} (auth={}, tls={})",
+        config_.host, config_.port, config_.endpoint,
+        config_.require_auth ? "on" : "off",
+        config_.tls_enabled ? "on" : "off");
 
     if (!server_->bind_to_port(config_.host, config_.port)) {
         spdlog::error("Failed to bind HTTP server on {}:{}", config_.host, config_.port);

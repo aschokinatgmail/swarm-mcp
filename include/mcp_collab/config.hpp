@@ -29,6 +29,10 @@ struct HttpConfig {
     bool require_auth{true};
     std::optional<bool> require_auth_env{};
     int rate_limit_rpm{60};
+    // TLS (HTTPS) support (#100/#60). Opt-in; defaults to plain HTTP.
+    bool tls_enabled{false};
+    std::string tls_cert_path;
+    std::string tls_key_path;
 };
 
 struct GitConfig {

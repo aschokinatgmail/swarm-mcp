@@ -255,3 +255,75 @@ TEST_F(ConfigTest, DefaultConfigRequireAuthEnvEmpty) {
     ServerConfig cfg;
     EXPECT_FALSE(cfg.http.require_auth_env.has_value());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TLS config tests (#100/#60)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+TEST_F(ConfigTest, DefaultConfigTlsDisabled) {
+    ServerConfig cfg;
+    EXPECT_FALSE(cfg.http.tls_enabled);
+    EXPECT_EQ(cfg.http.tls_cert_path, "");
+    EXPECT_EQ(cfg.http.tls_key_path, "");
+}
+
+TEST_F(ConfigTest, FromFileParsesTlsFields) {
+    write_config(R"({
+        "http": {
+            "host": "0.0.0.0",
+            "port": 8443,
+            "tls_enabled": true,
+            "tls_cert_path": "/certs/server.pem",
+            "tls_key_path": "/certs/server.key"
+        }
+    })");
+
+    auto cfg = ServerConfig::from_file(test_config_path);
+    EXPECT_TRUE(cfg.http.tls_enabled);
+    EXPECT_EQ(cfg.http.tls_cert_path, "/certs/server.pem");
+    EXPECT_EQ(cfg.http.tls_key_path, "/certs/server.key");
+    EXPECT_EQ(cfg.http.port, 8443);
+}
+
+TEST_F(ConfigTest, FromFileTlsOmittedDefaultsToDisabled) {
+    write_config(R"({"http": {"port": 3001}})");
+    auto cfg = ServerConfig::from_file(test_config_path);
+    EXPECT_FALSE(cfg.http.tls_enabled);
+    EXPECT_EQ(cfg.http.tls_cert_path, "");
+    EXPECT_EQ(cfg.http.tls_key_path, "");
+}
+
+TEST_F(ConfigTest, FromEnvParsesTlsFields) {
+    set_env("SWARM_HTTP_TLS", "true");
+    set_env("SWARM_HTTP_TLS_CERT", "/env/cert.pem");
+    set_env("SWARM_HTTP_TLS_KEY", "/env/key.pem");
+
+    auto cfg = ServerConfig::from_env();
+    EXPECT_TRUE(cfg.http.tls_enabled);
+    EXPECT_EQ(cfg.http.tls_cert_path, "/env/cert.pem");
+    EXPECT_EQ(cfg.http.tls_key_path, "/env/key.pem");
+
+    unset_env("SWARM_HTTP_TLS");
+    unset_env("SWARM_HTTP_TLS_CERT");
+    unset_env("SWARM_HTTP_TLS_KEY");
+}
+
+TEST_F(ConfigTest, FromEnvTlsFalseWhenNotSet) {
+    unset_env("SWARM_HTTP_TLS");
+    auto cfg = ServerConfig::from_env();
+    EXPECT_FALSE(cfg.http.tls_enabled);
+}
+
+TEST_F(ConfigTest, FromEnvTlsAcceptsOneAsTrue) {
+    set_env("SWARM_HTTP_TLS", "1");
+    auto cfg = ServerConfig::from_env();
+    EXPECT_TRUE(cfg.http.tls_enabled);
+    unset_env("SWARM_HTTP_TLS");
+}
+
+TEST_F(ConfigTest, FromEnvTlsRejectsGarbageAsFalse) {
+    set_env("SWARM_HTTP_TLS", "garbage");
+    auto cfg = ServerConfig::from_env();
+    EXPECT_FALSE(cfg.http.tls_enabled);
+    unset_env("SWARM_HTTP_TLS");
+}
