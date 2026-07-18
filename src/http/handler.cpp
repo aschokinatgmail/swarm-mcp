@@ -1,6 +1,7 @@
 #include "mcp_collab/transport_http.hpp"
 #include "mcp_collab/uuid.hpp"
 #include <spdlog/spdlog.h>
+#include <format>
 #include <sstream>
 #include <deque>
 #include <condition_variable>

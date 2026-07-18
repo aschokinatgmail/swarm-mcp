@@ -282,7 +282,7 @@ swarm-mcp/
 │   ├── http/               # HTTP handler with SSE
 │   └── util/               # Auth, config
 ├── tests/
-│   ├── unit/               # 11 unit test files (843+ tests)
+│   ├── unit/               # 24 unit test files (870+ tests)
 │   └── integration/        # 4 integration test files
 ├── config/default.json     # Default configuration
 ├── CMakeLists.txt          # Build system
@@ -291,7 +291,7 @@ swarm-mcp/
 
 ## Testing
 
-- **843+ unit tests** covering all core modules
+- **870+ unit tests** covering all core modules
 - **4 integration test files** for MCP/HTTP, workspace, MQTT, and Git workflows
 - Build target: `swarm_mcp_unit_tests`, `swarm_mcp_integration_tests`
 

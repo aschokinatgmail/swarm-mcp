@@ -197,18 +197,10 @@ void SwarmServer::load_persistence() {
         if (snapshot->contains("tasks")) {
             for (const auto& tj : (*snapshot)["tasks"]) {
                 Task t = Task::from_json(tj);
-                auto created = task_manager_.create_task(t.title, t.creator, t.description, t.priority);
-                created.assignee = t.assignee;
-                created.status = t.status;
-                created.dependencies = t.dependencies;
-                created.tags = t.tags;
-                created.context = t.context;
-                created.deadline = t.deadline;
-                task_manager_.update_task(created.id, created);
-                if (!t.assignee.empty()) {
-                    task_manager_.assign_task(created.id, t.assignee);
-                }
-                task_manager_.set_status(created.id, t.status);
+                // Restore the task with its original ID so dependency references
+                // (which are UUIDs) remain valid across restarts. create_task
+                // would generate a fresh UUID and break every dep chain.
+                task_manager_.restore_task(t);
             }
         }
         if (snapshot->contains("agents")) {

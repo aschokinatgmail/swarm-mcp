@@ -122,6 +122,15 @@ Task TaskManager::create_task(const std::string& title, const std::string& creat
     return task;
 }
 
+void TaskManager::restore_task(const Task& task) {
+    {
+        std::unique_lock lock(mutex_);
+        tasks_[task.id] = task;
+    }
+    notify("task.restored", task);
+    spdlog::info("Task restored: id={} title=\"{}\"", task.id, task.title);
+}
+
 std::optional<Task> TaskManager::get_task(const std::string& id) const {
     std::shared_lock lock(mutex_);
     auto it = tasks_.find(id);

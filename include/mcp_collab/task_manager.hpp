@@ -73,6 +73,12 @@ public:
                     const std::string& description = "",
                     TaskPriority priority = TaskPriority::Medium);
 
+    // Restore a task with its existing ID (used by persistence load).
+    // Unlike create_task, this does NOT generate a new UUID — it inserts the
+    // task under its original id, preserving dependency references across
+    // restarts. Emits a "task.restored" event.
+    void restore_task(const Task& task);
+
     std::optional<Task> get_task(const std::string& id) const;
     bool update_task(const std::string& id, const Task& task);
     bool delete_task(const std::string& id);

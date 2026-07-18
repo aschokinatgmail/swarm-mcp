@@ -49,8 +49,11 @@ bool PersistenceLayer::save(const Snapshot& data) {
         }
 
 #ifndef _WIN32
-        // fsync the temp file before atomic rename so the data is durable
-        int fd = ::open(tmp_path.c_str(), O_RDONLY);
+        // fsync the temp file before atomic rename so the data is durable.
+        // Open with O_RDWR: on Darwin fsync is per-fd, and an O_RDONLY fd is a
+        // no-op for durability — we need a writable fd to force the kernel to
+        // flush the page cache to disk.
+        int fd = ::open(tmp_path.c_str(), O_RDWR);
         if (fd >= 0) {
             if (::fsync(fd) != 0) {
                 spdlog::warn("fsync failed for {}: {}", tmp_path, std::strerror(errno));
