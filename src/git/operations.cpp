@@ -40,14 +40,21 @@ GitResult GitOperations::exec(std::vector<std::string> argv) const {
     PROCESS_INFORMATION pi{};
 
     // Build command line: git -C <repo> <argv...>
+    // Windows quoting: wrap each arg in double quotes, escape embedded
+    // double quotes with backslashes (Windows command-line convention).
+    auto win_quote = [](const std::string& s) {
+        std::string q = "\"";
+        for (char c : s) {
+            if (c == '"') q += "\\\"";
+            else q += c;
+        }
+        q += "\"";
+        return q;
+    };
     std::string cmdline = "git";
-    cmdline += " -C \"";
-    cmdline += repo_path_;
-    cmdline += "\"";
+    cmdline += " -C " + win_quote(repo_path_);
     for (const auto& a : argv) {
-        cmdline += " \"";
-        cmdline += a;
-        cmdline += "\"";
+        cmdline += " " + win_quote(a);
     }
 
     char buf[4096];
