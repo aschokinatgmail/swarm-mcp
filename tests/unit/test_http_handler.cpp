@@ -484,7 +484,7 @@ TEST_F(HttpHandlerTest, CorsOriginEmptyOmitsAccessControlAllowOriginHeader) {
     StreamableHttpTransport transport(
         *protocol_, *auth_,
         StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
-                             .require_auth = false, .cors_origin = ""});
+                             .cors_origin = "", .require_auth = false});
     httplib::Request req = make_request("POST", "/mcp",
         R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
     httplib::Response res;
@@ -498,7 +498,7 @@ TEST_F(HttpHandlerTest, CorsOriginSpecificSetsAccessControlAllowOriginHeader) {
     StreamableHttpTransport transport(
         *protocol_, *auth_,
         StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
-                             .require_auth = false, .cors_origin = "https://example.com"});
+                             .cors_origin = "https://example.com", .require_auth = false});
     httplib::Request req = make_request("POST", "/mcp",
         R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
     httplib::Response res;
@@ -514,7 +514,7 @@ TEST_F(HttpHandlerTest, CorsOriginWildcardSetsAccessControlAllowOriginStar) {
     StreamableHttpTransport transport(
         *protocol_, *auth_,
         StreamableHttpConfig{.host = "127.0.0.1", .port = 0, .endpoint = "/mcp",
-                             .require_auth = false, .cors_origin = "*"});
+                             .cors_origin = "*", .require_auth = false});
     httplib::Request req = make_request("POST", "/mcp",
         R"({"jsonrpc":"2.0","id":1,"method":"ping"})");
     httplib::Response res;

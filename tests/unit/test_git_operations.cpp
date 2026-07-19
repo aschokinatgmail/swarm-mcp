@@ -243,7 +243,11 @@ TEST_F(GitOperationsTest, CommitMessageWithDoubleQuotesPreserved) {
     git.add();
     std::string msg = "fix: merge \"feature-x\" into main";
     EXPECT_TRUE(git.commit(msg));
-    auto log = git.exec_str("log -1 --format=%B");
+    // Use --format=%s (subject only) rather than %B (full body) — %B includes
+    // trailing newlines whose count varies across git versions/platforms, which
+    // made this test flaky on macOS CI. The commit message is a single line, so
+    // the subject is the faithful round-trip of what was passed to -m.
+    auto log = git.exec_str("log -1 --format=%s");
     auto body = log.stdout_out;
     while (!body.empty() && (body.back() == '\n' || body.back() == '\r')) body.pop_back();
     EXPECT_EQ(body, msg);
