@@ -190,9 +190,16 @@ TEST_F(ConfigTest, SymlinkOutsideAllowlistRejected) {
     std::filesystem::path test_dir = std::filesystem::temp_directory_path() / ("swarm-mcp-symlink-test-" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::create_directories(test_dir);
 
-    // Create a symlink to /etc/passwd
+    // Create a symlink to /etc/passwd. On Windows, symlink creation requires
+    // admin/developer mode and may fail with an error — skip the test in that
+    // case rather than reporting a false failure.
     std::filesystem::path symlink_path = test_dir / "config.json";
-    std::filesystem::create_symlink("/etc/passwd", symlink_path);
+    std::error_code symlink_ec;
+    std::filesystem::create_symlink("/etc/passwd", symlink_path, symlink_ec);
+    if (symlink_ec) {
+        std::filesystem::remove_all(test_dir);
+        GTEST_SKIP() << "Symlinks not supported on this platform";
+    }
 
     // Symlink resolves to /etc/passwd which is outside the allowlist
     EXPECT_THROW(ServerConfig::from_file(symlink_path.string()), std::invalid_argument);

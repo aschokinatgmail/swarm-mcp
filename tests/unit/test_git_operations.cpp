@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "mcp_collab/git_operations.hpp"
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -249,7 +250,11 @@ TEST_F(GitOperationsTest, CommitMessageWithDoubleQuotesPreserved) {
     // the subject is the faithful round-trip of what was passed to -m.
     auto log = git.exec_str("log -1 --format=%s");
     auto body = log.stdout_out;
-    while (!body.empty() && (body.back() == '\n' || body.back() == '\r')) body.pop_back();
+    // Trim ALL surrounding whitespace (spaces, tabs, \r, \n) — git on Windows
+    // emits CRLF line endings and may pad the subject, so a targeted \n/\r
+    // trim is insufficient on MSVC CI.
+    while (!body.empty() && std::isspace(static_cast<unsigned char>(body.back()))) body.pop_back();
+    while (!body.empty() && std::isspace(static_cast<unsigned char>(body.front()))) body.erase(body.begin());
     EXPECT_EQ(body, msg);
 }
 
