@@ -149,7 +149,11 @@ ServerConfig ServerConfig::from_env() {
     if (env_val) {
         cfg.swarm.secret = env_val;
         spdlog::warn("SWARM_SECRET read from environment; consider --secret-file for better security.");
+#ifdef _WIN32
+        _putenv_s("SWARM_SECRET", "");
+#else
         unsetenv("SWARM_SECRET");
+#endif
     }
 
     env_val = std::getenv("SWARM_MQTT_HOST");
