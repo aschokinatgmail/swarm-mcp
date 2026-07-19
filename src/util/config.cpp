@@ -41,7 +41,7 @@ ServerConfig ServerConfig::from_file(const std::string& path) {
     }
 
     // Canonicalize and validate against allowlist
-    auto resolved = std::filesystem::weakly_canonical(path);
+    auto resolved = std::filesystem::weakly_canonical(std::filesystem::absolute(path));
 
     // Canonicalize the allowlist roots too, so symlinked roots (e.g. macOS
     // /var -> /private/var, or /tmp -> /private/tmp) compare lexically equal
